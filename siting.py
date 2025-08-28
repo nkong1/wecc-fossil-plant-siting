@@ -3,9 +3,9 @@ import geopandas as gpd
 from pathlib import Path
 import math
 import numpy as np
-from pre_processing import reference_plant_specs
+from pre_processing.reference_plant_specs import *
 
-base_path = Path.cwd()
+base_path = Path(__file__)
 
 candidate_sites_path = base_path / "candidate_sites_final_filtered"
 h2_buildout_path = base_path / 'user_inputs' / 'prod_tech_capacities.csv'

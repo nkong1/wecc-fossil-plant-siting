@@ -1,7 +1,11 @@
 **/.DS_Store
 *.pyc 
 ~*
+**.gpkg-shm
+**.gpkg-wal
 
 chosen_sites.gpkg
 input_geofiles
 pre_processing/input_files
+candidate_sites_final_filtered
+pre_processing/candidate_sites_ref_footprints
