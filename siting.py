@@ -3,27 +3,13 @@ import geopandas as gpd
 from pathlib import Path
 import math
 import numpy as np
+from pre_processing import reference_plant_specs
 
 base_path = Path.cwd()
 
-candidate_sites_path = base_path / "candidate_sites"
-load_zones_path = base_path / 'input_geofiles' / 'load_zones'/ 'load_zones.shp'
+candidate_sites_path = base_path / "candidate_sites_final_filtered"
 h2_buildout_path = base_path / 'user_inputs' / 'prod_tech_capacities.csv'
 wecc_demand_grid_path = base_path / 'user_inputs' / '2050_wecc_h2_demand_5km_resolution.gpkg'
-
-# Create a dictionary mapping each hydrogen production technology to its reference plant capacity (tonnes/day)
-ref_capacity = {
-    "gas_smr": 132,
-    "gas_smr_ccs": 132,
-    "biogas_smr": 132,
-    "biogas_smr_ccs": 132,
-    "gas_atr_ccs": 180,
-    "biogas_atr_ccs": 180,
-    "coal_gasification": 180,
-    "coal_gasification_ccs": 180,
-    "biomass_gasification": 42,
-}
-
 
 def covered_area(x_coord, y_coord, capacity, demand_grid_gdf):
     """

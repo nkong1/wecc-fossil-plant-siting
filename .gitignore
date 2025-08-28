@@ -3,10 +3,5 @@
 ~*
 
 chosen_sites.gpkg
-
-Annual_NLCD_LndCov_2024_CU_C1V1.pdf
-Annual_NLCD_LndCov_2024_CU_C1V1.tif
-Annual_NLCD_LndCov_2024_CU_C1V1.tif.aux.xml
-Annual_NLCD_LndCov_2024_CU_C1V1.xml
-Annual_NLCD_LndCov_2024_CU_C1V1-20250827T055224Z-1-001.zip
-nationally_significant_ag_land_2016_conus_120m.tif.aux.xml
+input_geofiles
+pre_processing/input_files
