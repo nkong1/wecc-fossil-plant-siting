@@ -16,7 +16,7 @@ from rasterio.features import geometry_mask
 from rasterio.windows import from_bounds
 from reference_plant_specs import *
 
-base_path = Path.cwd() 
+base_path = Path(__file__).parent
 
 # Input data paths
 candidate_sites_path = base_path / 'input_files' / "candidate_sites_1x1km"
@@ -24,6 +24,10 @@ combined_exclusion_30m_path = base_path / 'input_files' / 'combined_exclusion_30
 
 # Intermediate output path for candidate sites with reference plant footprints
 ref_footprints_output_path = base_path / 'candidate_sites_ref_footprints' 
+
+# Final output path for filtered candidate sites
+final_output_path = base_path.parent / 'candidate_sites_final_filtered'
+
 
 #%%
 #============================================================================
@@ -54,6 +58,7 @@ ref_footprints_output_path.mkdir(parents=True, exist_ok=True)
 
 print(candidate_sites_path)
 for file_path in candidate_sites_path.glob("*.gpkg"):
+    print('Processing:', file_path.name)
     # Extract the technology name from the file name
     tech_name = file_path.stem
     
@@ -98,16 +103,15 @@ for file_path in candidate_sites_path.glob("*.gpkg"):
 # is deemed acceptable.
 #============================================================================
 
-# From the NCLD, filter out Open Water, Pernnial Ice/Snow, Developed Open Space, 
+# Note: The exclusion raster is a combination of NLCD land cover and nationally significant agricultural land
+# NLCD land cover types excluded are: Open Water, Pernnial Ice/Snow, Developed Open Space, 
 # Developed Low Intensity, Developed Medium Intensity, Developed High Intensity,
-# Deciduous Forest, Evergreen Forest, Mixed Forest, Woody Wetlands, and Herbaceous Wetlands
-
-nlcd_filter = [11, 12, 21, 22, 23, 24, 41, 42, 43, 90, 95]
+# Deciduous Forest, Evergreen Forest, Mixed Forest, Woody Wetlands, and Herbaceous Wetlands.
+# Nationally significant agricultural land is excluded too. Excluded areas are marked with a value of 1.
 
 # Open NLCD and Ag rasters 
 exclusion_src = rasterio.open(combined_exclusion_30m_path)
 
-final_output_path = base_path.parent / 'candidate_sites_final_filtered'
 if final_output_path.exists():
     shutil.rmtree(final_output_path)
 final_output_path.mkdir(parents=True, exist_ok=True)
@@ -151,3 +155,28 @@ for file_path in ref_footprints_output_path.glob("*.gpkg"):
     final_gdf = gpd.GeoDataFrame(geometry=accepted_geometries, crs=refined_gdf.crs)
     final_gdf.to_file(final_output_path / f"{tech_name}.gpkg", driver="GPKG")
     print(f"Saved final filtered suitable sites for {tech_name}")
+
+# %%
+#============================================================================
+# Add a load area column to each final suitable sites file
+#============================================================================
+
+load_zones_path = base_path / "input_files" / "load_zones" / "load_zones.shp"
+load_zones_gdf = gpd.read_file(load_zones_path)
+
+for file_path in final_output_path.glob("*.gpkg"):
+    print('Processing:', file_path.name)
+    tech_name = file_path.stem
+    
+    final_gdf = gpd.read_file(file_path)
+    
+    # Perform spatial join to associate each candidate site with a load zone
+    joined_gdf = gpd.sjoin(final_gdf, load_zones_gdf[['geometry', 'LOAD_AREA']], how="left", predicate="within").reset_index(drop=True)
+    
+    # Filter out geometries that do not fall within any load zone
+    joined_gdf = joined_gdf[~joined_gdf["LOAD_AREA"].isna()].copy().drop(columns=["index_right"])
+
+    # Save the updated GeoDataFrame back to the same file
+    joined_gdf.to_file(file_path, driver="GPKG")
+    print(f"Added load area info and saved for {tech_name}")
+# %%

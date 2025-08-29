@@ -5,11 +5,12 @@ import math
 import numpy as np
 from pre_processing.reference_plant_specs import *
 
-base_path = Path(__file__)
+base_path = Path(__file__).parent
 
 candidate_sites_path = base_path / "candidate_sites_final_filtered"
 h2_buildout_path = base_path / 'user_inputs' / 'prod_tech_capacities.csv'
 wecc_demand_grid_path = base_path / 'user_inputs' / '2050_wecc_h2_demand_5km_resolution.gpkg'
+load_zones_path = base_path / 'pre_processing' / "input_files" / "load_zones" / "load_zones.shp"
 
 def covered_area(x_coord, y_coord, capacity, demand_grid_gdf):
     """
@@ -66,7 +67,6 @@ def update_demand_grid(demand_grid_gdf, x_coord, y_coord, radius_covered):
     """
 
     # Add a new column with the distance from the centroid of each square to the candidate plant
-    print(radius_covered)
     dist = np.sqrt(
         (demand_grid_gdf["centroid_x"] - x_coord) ** 2
         + (demand_grid_gdf["centroid_y"] - y_coord) ** 2
@@ -172,10 +172,12 @@ def run():
         print("Load Zone:")
         print(load_zone)
 
+        # Import the load zones shapefile and filter for the current load zone
+        load_zones_gdf = gpd.read_file(load_zones_path)
+        load_zone_row = load_zones_gdf[load_zones_gdf["LOAD_AREA"] == load_zone].copy()
+
         # Filter the demand grid for the squares within the load zone
-        load_zone_demand_grid = wecc_demand_grid[
-            wecc_demand_grid["LOAD_AREA"] == load_zone
-        ].copy()
+        load_zone_demand_grid = gpd.sjoin(wecc_demand_grid, load_zone_row, how="left", predicate="intersects")
 
         # Create a running list of candidate sites
         load_zone_candidates_df = gpd.GeoDataFrame()
@@ -218,6 +220,8 @@ def run():
             top_site, load_zone_demand_grid = most_suitable_site(
                 load_zone_candidates_df, load_zone_demand_grid
             )
+
+            print('Top site selected: ', top_site)
 
             # Update the list of candidate sites by removing the selected site
             load_zone_candidates_df = load_zone_candidates_df[
