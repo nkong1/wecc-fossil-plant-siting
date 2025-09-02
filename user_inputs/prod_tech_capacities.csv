@@ -1,4 +1,4 @@
-﻿load_zone,coal_gasification,coal_gasification_ccs,biomass_gasification,gas_smr,gas_smr_ccs,biogas_smr,biogas_smr_ccs,gas_atr_ccs,biogas_atr_ccs
+﻿load_zone,coal_gas,coal_gas_ccs,biomass_gas,gas_smr,gas_smr_ccs,bio_smr,bio_smr_ccs,gas_atr_ccs,bio_atr_ccs
 AZ_APS_E,0,0,0,0,0,0,0,0,0
 AZ_APS_N,,,,,,,,,
 AZ_APS_SW,,,,,,,,,
