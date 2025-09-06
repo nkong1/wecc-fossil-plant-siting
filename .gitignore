@@ -7,7 +7,9 @@
 
 chosen_sites.gpkg
 input_geofiles
-candidate_sites_final_filtered
+final_candidate_sites
+candidate_sites_filtered
+candidate_sites_with_dists
 candidate_sites_ref_footprints
 pre_processing/input_files
 pre_processing/candidate_sites_ref_footprints
