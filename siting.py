@@ -7,17 +7,22 @@ from pre_processing.reference_plant_specs import *
 base_path = Path(__file__).parent
 
 candidate_sites_path = base_path / "final_candidate_sites"
-h2_buildout_path = base_path / 'user_inputs' / 'prod_tech_capacities.csv'
+h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
 
-wecc_demand_grid_path = base_path / 'user_inputs' / '2050_wecc_h2_demand_5km_resolution.gpkg'
+wecc_demand_grid_path = (
+    base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
+)
 
 # -----------------------
 # Helper functions
 # -----------------------
 
-def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr):
+
+def covered_radius(
+    x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr
+):
     """
-    Compute coverage radius (m) for a candidate plant and the fraction of the last partially-covered cell. 
+    Compute coverage radius (m) for a candidate plant and the fraction of the last partially-covered cell.
 
     Inputs:
       x_coord, y_coord: coordinates of candidate site (in EPSG:5070)
@@ -62,24 +67,30 @@ def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_
         remaining_prod = annual_output - cum_demand[stop_idx - 1]
         last_cell_coverage_ratio = remaining_prod / sorted_demand[stop_idx]
 
-        radius = sorted_dist_square[stop_idx - 1] ** 0.5 + (sorted_dist_square[stop_idx] ** 0.5 - \
-                        sorted_dist_square[stop_idx - 1] ** 0.5) * last_cell_coverage_ratio
-        
+        radius = (
+            sorted_dist_square[stop_idx - 1] ** 0.5
+            + (
+                sorted_dist_square[stop_idx] ** 0.5
+                - sorted_dist_square[stop_idx - 1] ** 0.5
+            )
+            * last_cell_coverage_ratio
+        )
+
         covered_fids = order[:stop_idx]
         last_cell_fid = order[stop_idx]
     else:
-        print('Warning: production capacity exceeds total demand')
-        # All cells fully covered
-        last_cell_coverage_ratio = 1.0
-        radius = sorted_dist_square[-1] ** 0.5
-        covered_fids = order
-        last_cell_fid = -1
-
+        if np.isclose(demand_vals_arr.sum(), annual_output):
+            # Demand is exactly fully covered.
+            return 0, np.array(range(len(demand_vals_arr))), -1, 100
+        else:
+            raise Exception('Fossil hydrogen production exceeds hydrogen demand')
+    
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
-
-def update_demand_grid(demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage):
+def update_demand_grid(
+    demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage
+):
     """
     Update demand_vals_arr in-place using the precomputed order and stop.
     - Fully zero out demand for indices all but the last covered fid
@@ -90,10 +101,9 @@ def update_demand_grid(demand_vals_arr, covered_fids, last_cell_fid, last_cell_c
     demand_vals_arr[covered_fids] = 0.0
 
     # Partially covered cell
-    demand_vals_arr[last_cell_fid] *= (1 - last_cell_coverage)
+    demand_vals_arr[last_cell_fid] *= 1 - last_cell_coverage
 
     return demand_vals_arr
-
 
 
 def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
@@ -101,10 +111,10 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     Pick the best site by scoring feedstock + substation + demand coverage.
     This function computes a coverage radius using each candidate's capacity,
     then returns the top candidate (row) and the demand update info for that candidate:
-    
+
       - fid_indices (np.ndarray): indices of demand cells that are fully or partially covered
       - coverage_ratio
-      - radius (m) 
+      - radius (m)
     """
     candidates_df = candidates_df.copy()
 
@@ -113,36 +123,41 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     fully_covered_fids = []
     last_cell_fids = []
     last_cell_coverages = []
-    
-    print('computing coverage areas for all candidates...')
+    print('checkpoint 1')
+    print("computing coverage areas for all candidates...")
     for row in candidates_df.itertuples(index=False):
         radius, covered_cells_fids, last_cell_fid, last_cell_coverage = covered_radius(
-        row.centroid_x,
-        row.centroid_y,
-        row.capacity_tonnes_per_day,
-        0.9,
-        demand_x_arr,
-        demand_y_arr,
-        demand_vals_arr,
-    )
+            row.centroid_x,
+            row.centroid_y,
+            row.capacity_tonnes_per_day,
+            0.9,
+            demand_x_arr,
+            demand_y_arr,
+            demand_vals_arr,
+        )
 
         radii.append(radius)
         fully_covered_fids.append(covered_cells_fids)
         last_cell_fids.append(last_cell_fid)
         last_cell_coverages.append(last_cell_coverage)
+    print('checkpoint 2')
 
     candidates_df["coverage_radius_m"] = radii
     candidates_df["covered_cell_fids"] = fully_covered_fids
     candidates_df["last_cell_fid"] = last_cell_fids
     candidates_df["last_cell_coverage"] = last_cell_coverages
+    print(candidates_df)
 
     # convert radius -> area for comparison/normalization
-    candidates_df["coverage_area_m2"] = np.pi * (candidates_df["coverage_radius_m"] ** 2)
-    candidates_df["coverage_m2_per_mw_h2"] = (
-        candidates_df["coverage_area_m2"] / (candidates_df["capacity_tonnes_per_day"] / 24 * 33.39)
+    candidates_df["coverage_area_m2"] = np.pi * (
+        candidates_df["coverage_radius_m"] ** 2
+    )
+    candidates_df["coverage_m2_per_mw_h2"] = candidates_df["coverage_area_m2"] / (
+        candidates_df["capacity_tonnes_per_day"] / 24 * 33.39
     )
 
-    print('done computing coverage areas')
+    print("done computing coverage areas")
+    print('checkpoint 3')
 
     # normalize features properly (min-max). guard against zero range
     def min_max_series(s):
@@ -160,25 +175,39 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     candidates_df["substation_score"] = substation_score
     candidates_df["demand_score"] = demand_score
 
-    candidates_df["combined_score"] = 6 * candidates_df["demand_score"] + 2 * candidates_df["feedstock_score"] + candidates_df["substation_score"]
+    candidates_df["combined_score"] = (
+        6 * candidates_df["demand_score"]
+        + 2 * candidates_df["feedstock_score"]
+        + candidates_df["substation_score"]
+    )
 
-    top_candidates = candidates_df[candidates_df["combined_score"] == candidates_df["combined_score"].min()]
+    top_candidates = candidates_df[
+        candidates_df["combined_score"] == candidates_df["combined_score"].min()
+    ]
 
     if len(top_candidates) == 1:
         top_row = top_candidates.iloc[0]
     else:
-        top_row = top_candidates.sort_values("capacity_tonnes_per_day", ascending=False).iloc[0]
+        top_row = top_candidates.sort_values(
+            "capacity_tonnes_per_day", ascending=False
+        ).iloc[0]
 
     # Apply demand update in-place
-    demand_vals_arr = update_demand_grid(demand_vals_arr, top_row['covered_cell_fids'], \
-                            top_row['last_cell_fid'],  top_row['last_cell_coverage'])
+    demand_vals_arr = update_demand_grid(
+        demand_vals_arr,
+        top_row["covered_cell_fids"],
+        top_row["last_cell_fid"],
+        top_row["last_cell_coverage"],
+    )
 
     # return top row and the demand update info
     return top_row, demand_vals_arr
 
+
 # -----------------------
 # Main runner
 # -----------------------
+
 
 def run():
     # Running list of selected candidates
@@ -186,27 +215,28 @@ def run():
 
     h2_build_out_df = pd.read_csv(h2_buildout_path, index_col=0)
 
-    # Add a column for the total build-out capacity in each load zone and sort
-    h2_build_out_df['total_buildout'] = h2_build_out_df.sum(axis=1, numeric_only=True)
-    h2_build_out_df = h2_build_out_df.sort_values(by='total_buildout', ascending=False)
+    # Sort the load zones by total buildout
+    h2_build_out_df["total_buildout"] = h2_build_out_df.sum(axis=1, numeric_only=True)
+    h2_build_out_df = h2_build_out_df.sort_values(by="total_buildout", ascending=False)
+    h2_build_out_df = h2_build_out_df.drop(columns=["total_buildout"])
 
     wecc_demand_grid = gpd.read_file(wecc_demand_grid_path)
     wecc_demand_grid["fid"] = wecc_demand_grid.index.astype(int)
     wecc_demand_grid["centroid"] = wecc_demand_grid.geometry.centroid
     wecc_demand_grid["centroid_x"] = wecc_demand_grid["centroid"].x
     wecc_demand_grid["centroid_y"] = wecc_demand_grid["centroid"].y
-    
+
     # Demand grid arrays
     demand_x_arr = wecc_demand_grid["centroid_x"].to_numpy()
     demand_y_arr = wecc_demand_grid["centroid_y"].to_numpy()
     demand_vals_arr = wecc_demand_grid["total_h2_demand_kg"].to_numpy().astype(float)
-    
+
     for load_zone, row in h2_build_out_df.iterrows():
         # only keep technologies with non-zero buildout in the load zone
         row = row[row != 0].dropna()
         if row.empty:
             continue
-        print(f"Load Zone: {load_zone}")
+        print(f"\nLoad Zone: {load_zone}")
 
         # candidate sites for this load zone and deployed technologies
         load_zone_candidates_df = gpd.GeoDataFrame()
@@ -225,48 +255,85 @@ def run():
             prod_tech_df["capacity_tonnes_per_day"] = ref_plant_capacity
             prod_tech_df["prod_tech"] = prod_tech_name
 
-            load_zone_candidates_df = pd.concat([load_zone_candidates_df, prod_tech_df], ignore_index=True)
-        
+            load_zone_candidates_df = pd.concat(
+                [load_zone_candidates_df, prod_tech_df], ignore_index=True
+            )
+
         # If no candidates, skip
         if load_zone_candidates_df.empty:
-            print(f"No candidate sites found for load zone {load_zone} with technologies {list(row.index)}")
+            print(
+                f"No candidate sites found for load zone {load_zone} with technologies {list(row.index)}"
+            )
             continue
-        
+
         # Set geometry and centroids
         load_zone_candidates_df["centroid"] = load_zone_candidates_df.geometry.centroid
         load_zone_candidates_df["centroid_x"] = load_zone_candidates_df["centroid"].x
         load_zone_candidates_df["centroid_y"] = load_zone_candidates_df["centroid"].y
 
+        def scale_capacity_to_remaining_demand(prod_tech, remaining_demand_kg_per_year):
+            """
+            Returns the appropriate size of the plant in tonnes/day needed to meet future demand, if
+            the future demand is less than the reference size.
+            """
+            capacity_tonnes_per_day = ref_capacity[prod_tech] 
+            if capacity_tonnes_per_day * 1000 * 365 * 0.9 < remaining_demand_kg_per_year:
+                return capacity_tonnes_per_day
+            return remaining_demand_kg_per_year / 1000 / 365 / 0.9
+
         # Iteratively pick the most suitable site until the build-out requirements for each technology are met
         while np.isclose(sum(row), 0) == False:
+            print(row)
             print("-----------------------")
             print("Remaining demand (kg/yr):", demand_vals_arr.sum())
-            try:
-                top_site, demand_vals_arr = most_suitable_site(load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr)
-                top_site = top_site.copy()
 
-                # remove chosen site
-                load_zone_candidates_df = load_zone_candidates_df[load_zone_candidates_df.geometry != top_site.geometry]
+            if demand_vals_arr.sum() < max(load_zone_candidates_df['capacity_tonnes_per_day'] * 1000 * 365 * 0.9):
+                print('activated')
+                load_zone_candidates_df['capacity_tonnes_per_day'] = load_zone_candidates_df['prod_tech'] \
+                    .apply(lambda x: scale_capacity_to_remaining_demand(x, demand_vals_arr.sum()))
 
-                # Update remaining buildout for this technology
-                top_site_tech = top_site["prod_tech"]
-                adjusted_capacity_tonnes_per_day = min(top_site["capacity_tonnes_per_day"], row[top_site_tech] / 33.39 * 24 ) # convert from MW to tonnes/day
-                row[top_site_tech] -= adjusted_capacity_tonnes_per_day / 24 * 33.39
+            top_site, demand_vals_arr = most_suitable_site(
+                load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr
+            )
+            top_site = top_site.copy()
 
-                # filter out candidate technologies that now have zero remaining buildout
-                load_zone_candidates_df = load_zone_candidates_df[load_zone_candidates_df["prod_tech"].map(lambda tech: row.get(tech, 0) != 0)]
+            # remove chosen site
+            load_zone_candidates_df = load_zone_candidates_df[
+                load_zone_candidates_df.geometry != top_site.geometry
+            ]
+            top_site_tech = top_site["prod_tech"]
 
-                selected_candidates_gdf = pd.concat([selected_candidates_gdf, gpd.GeoDataFrame([top_site])], ignore_index=True)
+            """# Update remaining buildout for this technology
+            adjusted_capacity_tonnes_per_day = min(
+                top_site["capacity_tonnes_per_day"], row[top_site_tech] / 33.39 * 24
+            )  # convert from tonnes/day to MW"""
 
-                print(f"Load zone: {load_zone} | Siting plant: {top_site_tech} | Remaining capacity: {row[top_site_tech]}")
-            except Exception as e:
-                break
-            
+            row[top_site_tech] -= top_site["capacity_tonnes_per_day"] / 24 * 33.39
+
+            # filter out candidate technologies that now have zero remaining buildout
+            load_zone_candidates_df = load_zone_candidates_df[
+                load_zone_candidates_df["prod_tech"].map(
+                    lambda tech: row.get(tech, 0) != 0
+                )
+            ]
+
+            selected_candidates_gdf = pd.concat(
+                [selected_candidates_gdf, gpd.GeoDataFrame([top_site])],
+                ignore_index=True,
+            )
+
+            print(
+                f"Load zone: {load_zone} | Siting plant: {top_site_tech} | Remaining tech capacity (MW): {row[top_site_tech]}"
+            )
+        
+        print("Final remaining (kg/yr):", demand_vals_arr.sum())
+
         # From the demand_vals_arr, make a new gpkg of remaining demand
         remaining_demand_gdf = gpd.read_file(wecc_demand_grid_path)
         remaining_demand_gdf["total_h2_demand_kg"] = demand_vals_arr
-        
+
     return selected_candidates_gdf, remaining_demand_gdf
+
 
 # -----------------------
 # Run and save
@@ -281,4 +348,3 @@ if not final_selected.empty:
 
 print("results saved!")
 print(final_selected)
- 
