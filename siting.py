@@ -8,12 +8,13 @@ base_path = Path(__file__).parent
 
 candidate_sites_path = base_path / "final_candidate_sites"
 h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
+capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
 
 wecc_demand_grid_path = (
     base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
 )
 
-technology_potential_path = base_path / 'technology_capacity_by_load_zone.csv'
+technology_potential_path = base_path / "technology_capacity_by_load_zone.csv"
 
 # -----------------------
 # Helper functions
@@ -84,9 +85,7 @@ def covered_radius(
         if np.isclose(demand_vals_arr.sum(), annual_output):
             # Demand is exactly fully covered.
             return 0, np.array(range(len(demand_vals_arr))), -1, 100
-        else:
-            raise Exception('Fossil hydrogen production exceeds hydrogen demand')
-    
+
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
@@ -106,6 +105,7 @@ def update_demand_grid(
     demand_vals_arr[last_cell_fid] *= 1 - last_cell_coverage
 
     return demand_vals_arr
+
 
 def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
@@ -131,7 +131,7 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
             row.centroid_x,
             row.centroid_y,
             row.capacity_tonnes_per_day,
-            0.9,
+            row.capacity_factor,
             demand_x_arr,
             demand_y_arr,
             demand_vals_arr,
@@ -155,7 +155,6 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     candidates_df["coverage_m2_per_mw_h2"] = candidates_df["coverage_area_m2"] / (
         candidates_df["capacity_tonnes_per_day"] / 24 * 33.39
     )
-
 
     # normalize features properly (min-max). guard against zero range
     def min_max_series(s):
@@ -204,19 +203,31 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
 
 def validate_potential(prod_tech, load_zone, build_out_MW, potential_df):
     """
-    Returns False if the build-out for the input technogy in the input load zone 
+    Returns False if the build-out for the input technogy in the input load zone
     exceeds its potential. Otherwise, returns True.
     """
     potential_df = potential_df.copy()
-    potential_df = potential_df[potential_df['LOAD_AREA'] == load_zone]
-    potential_df = potential_df[potential_df['prod_tech'] == prod_tech]
+    potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
+    potential_df = potential_df[potential_df["prod_tech"] == prod_tech]
 
-    return not build_out_MW > potential_df['potential_MW'].iloc[0]
+    return not build_out_MW > potential_df["potential_MW"].iloc[0]
+
+
+def scale_capacity_to_buildout(
+    prod_tech, ref_capacity_tonnes_per_day, buildout_capacities_MW
+):
+    """
+    Returns the appropriate size of the plant in tonnes/day needed to remaining buildout requirements.
+    """
+    buildout_capacity_tonnes_per_day = buildout_capacities_MW[prod_tech] * 24 / 33.39
+    if ref_capacity_tonnes_per_day > buildout_capacity_tonnes_per_day:
+        return buildout_capacity_tonnes_per_day 
+    return ref_capacity_tonnes_per_day
+
 
 # -----------------------
 # Main runner
 # -----------------------
-
 
 def run():
     # Running list of selected candidates
@@ -240,6 +251,7 @@ def run():
     demand_y_arr = wecc_demand_grid["centroid_y"].to_numpy()
     demand_vals_arr = wecc_demand_grid["total_h2_demand_kg"].to_numpy().astype(float)
 
+    capacity_factors_df = pd.read_csv(capacity_factors_path, index_col=0)
     tech_potential = pd.read_csv(technology_potential_path)
 
     for load_zone, row in h2_build_out_df.iterrows():
@@ -247,7 +259,6 @@ def run():
         row = row[row != 0].dropna()
         if row.empty:
             continue
-
 
         print(f"\nLoad Zone: {load_zone}")
 
@@ -261,8 +272,12 @@ def run():
             buildout_capacity_MW = row[prod_tech_name]
 
             # Throw an error if the build-out exceeds the potential
-            if not validate_potential(prod_tech_name, load_zone, buildout_capacity_MW, tech_potential):
-                raise Exception(f'Build-out: {buildout_capacity_MW} MW for {prod_tech_name} in {load_zone} exceeds potential')
+            if not validate_potential(
+                prod_tech_name, load_zone, buildout_capacity_MW, tech_potential
+            ):
+                raise Exception(
+                    f"Build-out: {buildout_capacity_MW} MW for {prod_tech_name} in {load_zone} exceeds potential"
+                )
 
             prod_tech_df = gpd.read_file(prod_tech_candidates)
             prod_tech_df = prod_tech_df[prod_tech_df["LOAD_AREA"] == load_zone]
@@ -271,8 +286,11 @@ def run():
 
             ref_plant_capacity = ref_capacity[prod_tech_name]
             prod_tech_df = prod_tech_df.copy()
+            capacity_factor = capacity_factors_df.loc[load_zone].loc[prod_tech_name]
+
             prod_tech_df["capacity_tonnes_per_day"] = ref_plant_capacity
             prod_tech_df["prod_tech"] = prod_tech_name
+            prod_tech_df["capacity_factor"] = capacity_factor
 
             load_zone_candidates_df = pd.concat(
                 [load_zone_candidates_df, prod_tech_df], ignore_index=True
@@ -290,27 +308,30 @@ def run():
         load_zone_candidates_df["centroid_x"] = load_zone_candidates_df["centroid"].x
         load_zone_candidates_df["centroid_y"] = load_zone_candidates_df["centroid"].y
 
-        def scale_capacity_to_remaining_demand(prod_tech, remaining_demand_kg_per_year):
-            """
-            Returns the appropriate size of the plant in tonnes/day needed to meet future demand, if
-            the future demand is less than the reference size.
-            """
-            capacity_tonnes_per_day = ref_capacity[prod_tech] 
-            if capacity_tonnes_per_day * 1000 * 365 * 0.9 < remaining_demand_kg_per_year:
-                return capacity_tonnes_per_day
-            return remaining_demand_kg_per_year / 1000 / 365 / 0.9
-
         # Iteratively pick the most suitable site until the build-out requirements for each technology are met
         while np.isclose(sum(row), 0) == False:
-            print(row)
+            remaining_demand_kg_per_year = demand_vals_arr.sum()
+
+            if remaining_demand_kg_per_year == 0:
+                raise Exception('Build-out production exceeds total hydrogen demand')
+
             print("-----------------------")
-            print("Remaining demand (kg/yr):", demand_vals_arr.sum())
+            print("Remaining demand (kg/yr):", remaining_demand_kg_per_year)
 
-            if demand_vals_arr.sum() < max(load_zone_candidates_df['capacity_tonnes_per_day'] * 1000 * 365 * 0.9):
-                print('activated')
-                load_zone_candidates_df['capacity_tonnes_per_day'] = load_zone_candidates_df['prod_tech'] \
-                    .apply(lambda x: scale_capacity_to_remaining_demand(x, demand_vals_arr.sum()))
-
+            # check if any of the remaining buildout capacities is less than the highest reference plant size
+            if any (row < max(load_zone_candidates_df["capacity_tonnes_per_day"] / 24 * 33.39)):                
+                updated_capacities =  (
+                    load_zone_candidates_df.apply(
+                        lambda candidates_row: scale_capacity_to_buildout(
+                            candidates_row["prod_tech"],
+                            candidates_row['capacity_tonnes_per_day'],
+                            row
+                        ),
+                        axis=1,
+                    ))
+                
+                load_zone_candidates_df["capacity_tonnes_per_day"] = updated_capacities
+                
             top_site, demand_vals_arr = most_suitable_site(
                 load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr
             )
@@ -339,7 +360,7 @@ def run():
             print(
                 f"Load zone: {load_zone} | Siting plant: {top_site_tech} | Remaining tech capacity (MW): {row[top_site_tech]}"
             )
-        
+
         print("Final remaining (kg/yr):", demand_vals_arr.sum())
 
         # From the demand_vals_arr, make a new gpkg of remaining demand
