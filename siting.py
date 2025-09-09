@@ -13,6 +13,8 @@ wecc_demand_grid_path = (
     base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
 )
 
+technology_potential_path = base_path / 'technology_capacity_by_load_zone.csv'
+
 # -----------------------
 # Helper functions
 # -----------------------
@@ -105,7 +107,6 @@ def update_demand_grid(
 
     return demand_vals_arr
 
-
 def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
     Pick the best site by scoring feedstock + substation + demand coverage.
@@ -123,7 +124,7 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     fully_covered_fids = []
     last_cell_fids = []
     last_cell_coverages = []
-    print('checkpoint 1')
+
     print("computing coverage areas for all candidates...")
     for row in candidates_df.itertuples(index=False):
         radius, covered_cells_fids, last_cell_fid, last_cell_coverage = covered_radius(
@@ -140,7 +141,6 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
         fully_covered_fids.append(covered_cells_fids)
         last_cell_fids.append(last_cell_fid)
         last_cell_coverages.append(last_cell_coverage)
-    print('checkpoint 2')
 
     candidates_df["coverage_radius_m"] = radii
     candidates_df["covered_cell_fids"] = fully_covered_fids
@@ -156,8 +156,6 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
         candidates_df["capacity_tonnes_per_day"] / 24 * 33.39
     )
 
-    print("done computing coverage areas")
-    print('checkpoint 3')
 
     # normalize features properly (min-max). guard against zero range
     def min_max_series(s):
@@ -204,6 +202,17 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     return top_row, demand_vals_arr
 
 
+def validate_potential(prod_tech, load_zone, build_out_MW, potential_df):
+    """
+    Returns False if the build-out for the input technogy in the input load zone 
+    exceeds its potential. Otherwise, returns True.
+    """
+    potential_df = potential_df.copy()
+    potential_df = potential_df[potential_df['LOAD_AREA'] == load_zone]
+    potential_df = potential_df[potential_df['prod_tech'] == prod_tech]
+
+    return not build_out_MW > potential_df['potential_MW'].iloc[0]
+
 # -----------------------
 # Main runner
 # -----------------------
@@ -231,11 +240,15 @@ def run():
     demand_y_arr = wecc_demand_grid["centroid_y"].to_numpy()
     demand_vals_arr = wecc_demand_grid["total_h2_demand_kg"].to_numpy().astype(float)
 
+    tech_potential = pd.read_csv(technology_potential_path)
+
     for load_zone, row in h2_build_out_df.iterrows():
         # only keep technologies with non-zero buildout in the load zone
         row = row[row != 0].dropna()
         if row.empty:
             continue
+
+
         print(f"\nLoad Zone: {load_zone}")
 
         # candidate sites for this load zone and deployed technologies
@@ -244,6 +257,12 @@ def run():
             prod_tech_name = prod_tech_candidates.stem
             if prod_tech_name not in row.index:
                 continue
+
+            buildout_capacity_MW = row[prod_tech_name]
+
+            # Throw an error if the build-out exceeds the potential
+            if not validate_potential(prod_tech_name, load_zone, buildout_capacity_MW, tech_potential):
+                raise Exception(f'Build-out: {buildout_capacity_MW} MW for {prod_tech_name} in {load_zone} exceeds potential')
 
             prod_tech_df = gpd.read_file(prod_tech_candidates)
             prod_tech_df = prod_tech_df[prod_tech_df["LOAD_AREA"] == load_zone]
@@ -302,11 +321,6 @@ def run():
                 load_zone_candidates_df.geometry != top_site.geometry
             ]
             top_site_tech = top_site["prod_tech"]
-
-            """# Update remaining buildout for this technology
-            adjusted_capacity_tonnes_per_day = min(
-                top_site["capacity_tonnes_per_day"], row[top_site_tech] / 33.39 * 24
-            )  # convert from tonnes/day to MW"""
 
             row[top_site_tech] -= top_site["capacity_tonnes_per_day"] / 24 * 33.39
 
