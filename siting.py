@@ -86,6 +86,11 @@ def covered_radius(
             # Demand is exactly fully covered.
             return 0, np.array(range(len(demand_vals_arr))), -1, 100
 
+        else:
+            print('production exceeds demand')
+            # Change this later
+            return 0, np.array(range(len(demand_vals_arr))), -1, 100
+
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
