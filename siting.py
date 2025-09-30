@@ -2,7 +2,7 @@ import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 import numpy as np
-from pre_processing.reference_plant_specs import *
+from reference_plant_specs import *
 
 base_path = Path(__file__).parent
 
