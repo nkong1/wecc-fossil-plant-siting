@@ -6,24 +6,22 @@ from reference_plant_specs import *
 
 base_path = Path(__file__).parent
 
-candidate_sites_path = base_path / "final_candidate_sites"
+# User-inputted files
 h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
 capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
+wecc_demand_grid_path = base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
 
-wecc_demand_grid_path = (
-    base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
-)
-
+# Built-in input files
+candidate_sites_path = base_path / "final_candidates"
 technology_potential_path = base_path / "technology_capacity_by_load_zone.csv"
+
+# Output path 
+output_path = base_path / 'outputs'
 
 # -----------------------
 # Helper functions
 # -----------------------
-
-
-def covered_radius(
-    x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr
-):
+def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
     Compute coverage radius (m) for a candidate plant and the fraction of the last partially-covered cell.
 
@@ -65,6 +63,7 @@ def covered_radius(
         radius = (sorted_dist_square[0] ** 0.5) * last_cell_coverage_ratio
         covered_fids = np.array([], dtype=int)
         last_cell_fid = order[0]
+        
     elif stop_idx < len(sorted_demand):
         # Some cells fully covered, one partially covered
         remaining_prod = annual_output - cum_demand[stop_idx - 1]
@@ -94,9 +93,7 @@ def covered_radius(
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
-def update_demand_grid(
-    demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage
-):
+def update_demand_grid(demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage):
     """
     Update demand_vals_arr in-place using the precomputed order and stop.
     - Fully zero out demand for indices all but the last covered fid
@@ -378,13 +375,12 @@ def run():
 # -----------------------
 # Run and save
 # -----------------------
-
 final_selected, remaining_demand_gdf = run()
 if not final_selected.empty:
     final_selected = final_selected.set_crs("EPSG:5070", allow_override=True)
-    final_selected.to_file("chosen_sites.gpkg", driver="GPKG")
+    final_selected.to_file(output_path / "chosen_sites.gpkg", driver="GPKG")
 
-    remaining_demand_gdf.to_file("remaining_demand.gpkg", driver="GPKG")
+    remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
 print("results saved!")
 print(final_selected)
