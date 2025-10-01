@@ -1,6 +1,6 @@
 ﻿load_zone,gas_cc,gas_cc_ccs,coal_igcc,coal_igcc_ccs
 AZ_APS_E,,,,
-AZ_APS_N,,,,
+AZ_APS_N,20000,,,
 AZ_APS_SW,,,,
 AZ_NM_N,,,,
 AZ_NW,,,,
