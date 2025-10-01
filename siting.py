@@ -95,9 +95,7 @@ def covered_radius(
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
-def update_demand_grid(
-    demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage
-):
+def update_demand_grid(demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage):
     """
     Update demand_vals_arr in-place using the precomputed order and stop.
     - Fully zero out demand for indices all but the last covered fid
@@ -228,17 +226,36 @@ def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
 
 def scale_capacity_to_buildout(prod_tech, ref_capacity_tonnes_per_day, buildout_capacities_MW):
     """
-    Returns the appropriate size of the plant in tonnes/day needed to remaining buildout requirements.
+    Scale the reference plant capacity to satisfy the remaining build-out requirement.
+
+    Parameters
+    ----------
+    prod_tech : str
+        Name of the hydrogen production technology.
+    ref_capacity_tonnes_per_day : float
+        Reference capacity of a single plant in tonnes/day.
+    buildout_capacities_MW : pd.Series
+        Remaining buildout capacities for each technology in MW.
+
+    Returns
+    ----------
+    float
+        Adjusted plant capacity in tonnes/day, capped at the remaining build-out requirement
     """
     buildout_capacity_tonnes_per_day = buildout_capacities_MW[prod_tech] * 24 / 33.39
     if ref_capacity_tonnes_per_day > buildout_capacity_tonnes_per_day:
         return buildout_capacity_tonnes_per_day
     return ref_capacity_tonnes_per_day
 
+
 def retrieve_sorted_buildout_data(h2_buildout_path):
     """
-    Returns a DataFrame containing the input hydrogen production build-out data, sorted by
-    descending total build-out by load zone.
+    Load the hydrogen production build-out CSV and return it sorted by total build-out per load zone.
+
+    Returns:
+    ----------
+    pd.DataFrame
+        Build-out data sorted in descending order of total capacity.
     """
     df = pd.read_csv(h2_buildout_path, index_col=0)
     df["total_buildout"] = df.sum(axis=1, numeric_only=True)
@@ -248,7 +265,12 @@ def retrieve_sorted_buildout_data(h2_buildout_path):
 
 def load_demand_grid(wecc_demand_grid_path):
     """
-    Reads in the WECC demand grid and creates new columns for the index ('fid') and centroid.
+    Load the WECC hydrogen demand grid and compute centroids for each demand cell.
+
+    Returns
+    ----------
+    gpd.GeoDataFrame 
+        GeoDataFrame with original demand data plus columns for 'fid', 'centroid', 'centroid_x', 'centroid_y'.
     """
     gdf = gpd.read_file(wecc_demand_grid_path)
     gdf["fid"] = gdf.index.astype(int)
@@ -260,13 +282,27 @@ def load_demand_grid(wecc_demand_grid_path):
 
 def get_load_zone_candidates(load_zone, buildout_row, candidate_sites_path, tech_potential, capacity_factors_df):
     """
-    Returns a DataFrame of all the candidate sites corresponding to the built-out technologies in the given load zone, 
-    containing the following columns: ["LOAD_AREA", "capacity_tonnes_per_day", "prod_tech", "capacity_factor", "centroid", 
-    "centroid_x", "centroid_y"].
+    Retrieve candidate sites for a load zone based on technologies in the buildout row.
 
-    Also contains a data check ensuring that the built-out capacity of each hydrogen production technology does not exceed
-    the potential of that technology in the load zone.
+    Parameters
+    ----------
+    load_zone : str
+        Name of the load zone.
+    buildout_row : pd.Series
+        Series of build-out capacities for the load zone, indexed by the production technology
+    candidate_sites_path : Path
+        Path to folder containing GeoPackages of candidate sites per technology.
+    tech_potential : pd.DataFrame
+        DataFrame of potential capacities for each technology in each load zone.
+    capacity_factors_df : pd.DataFrame
+        DataFrame of capacity factors for each technology in each load zone.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame of candidate sites with added columns for capacity, technology, capacity factor, and centroids.
     """
+     
     load_zone_candidates_df = gpd.GeoDataFrame()
     
     for prod_tech_candidates in candidate_sites_path.glob("*gpkg"):
@@ -305,6 +341,30 @@ def get_load_zone_candidates(load_zone, buildout_row, candidate_sites_path, tech
 
 
 def site_plants_for_load_zone(row, load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
+    """
+    Iteratively select candidate sites in a load zone until all build-out requirements are met.
+
+    Parameters
+    ----------
+    row : pd.Series
+        Remaining build-out capacities for the load zone.
+    load_zone_candidates_df : gpd.GeoDataFrame
+        Candidate sites for the load zone.
+    demand_x_arr : np.ndarray
+        X-coordinates of demand cell centroids.
+    demand_y_arr : np.ndarray
+        Y-coordinates of demand cell centroids.
+    demand_vals_arr : np.ndarray
+        Remaining hydrogen demand per cell (kg/year).
+
+    Returns
+    -------
+    selected_candidates_gdf : gpd.GeoDataFrame
+        Selected sites for the load zone with capacities and locations.
+    demand_vals_arr : np.ndarray
+        Updated hydrogen demand array after siting.
+    """
+        
     selected_candidates_gdf = gpd.GeoDataFrame()
     while not np.isclose(sum(row), 0):
         remaining_demand_kg_per_year = demand_vals_arr.sum()
