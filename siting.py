@@ -9,7 +9,7 @@ base_path = Path(__file__).parent
 # User-inputted files
 h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
 capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
-wecc_demand_grid_path = base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
+wecc_demand_grid_path = base_path / "user_inputs" / "2050_wecc_h2_demand_5km_resolution.gpkg"
 
 # Built-in input files
 candidate_sites_path = base_path / "final_candidates"
@@ -129,7 +129,6 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     last_cell_fids = []
     last_cell_coverages = []
 
-    print("computing coverage areas for all candidates...")
     for row in candidates_df.itertuples(index=False):
         radius, covered_cells_fids, last_cell_fid, last_cell_coverage = covered_radius(
             row.centroid_x,
@@ -218,7 +217,6 @@ def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
     for i in range(1, 4):
         tech_row = potential_df[potential_df[f"prod_tech{str(i)}"] == prod_tech]
         if not tech_row.empty:
-            print(tech_row)
             break
 
     return build_out_MW > tech_row["potential_MW"].iloc[0]
@@ -340,14 +338,27 @@ def get_load_zone_candidates(load_zone, buildout_row, candidate_sites_path, tech
     return load_zone_candidates_df
 
 
-def site_plants_for_load_zone(row, load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
+def choose_gas_prod_tech(buildout_row):
+    """
+    Takes in a pd.Series object containing the remaining build-out capacities for a load zone. Returns
+    a natural gas hydrogen production technology using the following priority: gas atr + ccs, gas smr + ccs, 
+    gas smr. The first of these technologies that still has remaining build-out is returned.
+    """
+    if 'gas_atr_ccs' in buildout_row.index and buildout_row['gas_atr_ccs'] != 0:
+        return 'gas_atr_ccs'
+    elif 'gas_smr_ccs' in buildout_row.index and buildout_row['gas_smr_ccs'] != 0:
+        return 'gas_smr_ccs'
+    else: 
+        return 'gas_smr'
+
+def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
     Iteratively select candidate sites in a load zone until all build-out requirements are met.
 
     Parameters
     ----------
-    row : pd.Series
-        Remaining build-out capacities for the load zone.
+    buildout_row : pd.Series
+        Contains remaining build-out capacities for the load zone.
     load_zone_candidates_df : gpd.GeoDataFrame
         Candidate sites for the load zone.
     demand_x_arr : np.ndarray
@@ -366,37 +377,42 @@ def site_plants_for_load_zone(row, load_zone_candidates_df, demand_x_arr, demand
     """
         
     selected_candidates_gdf = gpd.GeoDataFrame()
-    while not np.isclose(sum(row), 0):
+    while not sum(buildout_row) != 0:
         remaining_demand_kg_per_year = demand_vals_arr.sum()
         if remaining_demand_kg_per_year == 0:
             raise Exception("Build-out production exceeds total hydrogen demand")
 
         # adjust if needed
-        if any(row < max(load_zone_candidates_df["capacity_tonnes_per_day"] / 24 * 33.39)):
+        if any(buildout_row < max(load_zone_candidates_df["capacity_tonnes_per_day"] / 24 * 33.39)):
             load_zone_candidates_df["capacity_tonnes_per_day"] = load_zone_candidates_df.apply(
                 lambda candidates_row: scale_capacity_to_buildout(
                     candidates_row["prod_tech"],
                     candidates_row["capacity_tonnes_per_day"],
-                    row
+                    buildout_row
                 ),
                 axis=1,
             )
 
         # choose top site
-        top_site, demand_vals_arr = most_suitable_site(
-            load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr
-        )
+        top_site, demand_vals_arr = most_suitable_site(load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr)
         top_site = top_site.copy()
 
         # update
         load_zone_candidates_df = load_zone_candidates_df[load_zone_candidates_df.geometry != top_site.geometry]
         top_site_tech = top_site["prod_tech"]
 
-        #TODO deal with the prod tech being gas smr
-        row[top_site_tech] -= top_site["capacity_tonnes_per_day"] / 24 * 33.39
+        # If a gas SMR site was chosen, update it by calling the choose_gas_prod_tech helper 
+        if top_site_tech == 'gas_smr':
+            top_site_tech = choose_gas_prod_tech(buildout_row)
+            top_site['prod_tech'] = top_site_tech
+
+        buildout_row[top_site_tech] -= top_site["capacity_tonnes_per_day"] / 24 * 33.39
+
+        if np.isclose(buildout_row[top_site_tech], 0):
+            buildout_row[top_site_tech] = 0
 
         load_zone_candidates_df = load_zone_candidates_df[
-            load_zone_candidates_df["prod_tech"].map(lambda tech: row.get(tech, 0) != 0)
+            load_zone_candidates_df["prod_tech"].map(lambda tech: buildout_row.get(tech, 0) != 0)
         ]
 
         selected_candidates_gdf = pd.concat(
@@ -404,7 +420,7 @@ def site_plants_for_load_zone(row, load_zone_candidates_df, demand_x_arr, demand
             ignore_index=True,
         )
 
-        print(f"Sited plant: {top_site_tech} | Remaining tech capacity (MW): {row[top_site_tech]}")
+        print(f"Sited plant: {top_site_tech} | Remaining tech capacity (MW): {buildout_row[top_site_tech]}")
 
     return selected_candidates_gdf, demand_vals_arr
 
@@ -435,7 +451,7 @@ def run():
         if buildout_row.empty:
             continue
 
-        print(f"\nLoad Zone: {load_zone}")
+        print(f"\nProcessing Load Zone: {load_zone}")
 
         load_zone_candidates_df = get_load_zone_candidates(
             load_zone, buildout_row, candidate_sites_path, tech_potential, capacity_factors_df
@@ -444,7 +460,7 @@ def run():
         selected_candidates_gdf, demand_vals_arr = site_plants_for_load_zone( buildout_row, load_zone_candidates_df,
             demand_x_arr, demand_y_arr, demand_vals_arr)
 
-        print("Final remaining (kg/yr):", demand_vals_arr.sum())
+        print("\nFinal remaining (kg/yr):", demand_vals_arr.sum())
 
         # From the demand_vals_arr, make a new gpkg of remaining demand
         remaining_demand_gdf = gpd.read_file(wecc_demand_grid_path)
@@ -464,5 +480,5 @@ if not final_selected.empty:
 
     remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
-print("results saved!")
-print(final_selected)
+print("\nResults saved!")
+print(final_selected[['LOAD_AREA',  'prod_tech', 'combined_score', 'capacity_tonnes_per_day', 'capacity_factor']])
