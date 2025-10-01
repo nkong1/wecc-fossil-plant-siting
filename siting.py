@@ -9,19 +9,24 @@ base_path = Path(__file__).parent
 # User-inputted files
 h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
 capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
-wecc_demand_grid_path = base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
+wecc_demand_grid_path = (
+    base_path / "user_inputs" / "2030_wecc_h2_demand_5km_resolution.gpkg"
+)
 
 # Built-in input files
 candidate_sites_path = base_path / "final_candidates"
-technology_potential_path = base_path / "technology_capacity_by_load_zone.csv"
+technology_potential_path = base_path / "h2_tech_potentials.csv"
 
-# Output path 
-output_path = base_path / 'outputs'
+# Output path
+output_path = base_path / "outputs"
+
 
 # -----------------------
 # Helper functions
 # -----------------------
-def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr):
+def covered_radius(
+    x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr
+):
     """
     Compute coverage radius (m) for a candidate plant and the fraction of the last partially-covered cell.
 
@@ -63,7 +68,7 @@ def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_
         radius = (sorted_dist_square[0] ** 0.5) * last_cell_coverage_ratio
         covered_fids = np.array([], dtype=int)
         last_cell_fid = order[0]
-        
+
     elif stop_idx < len(sorted_demand):
         # Some cells fully covered, one partially covered
         remaining_prod = annual_output - cum_demand[stop_idx - 1]
@@ -86,14 +91,16 @@ def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_
             return 0, np.array(range(len(demand_vals_arr))), -1, 100
 
         else:
-            print('production exceeds demand')
+            print("production exceeds demand")
             # Change this later
             return 0, np.array(range(len(demand_vals_arr))), -1, 100
 
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
 
-def update_demand_grid(demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage):
+def update_demand_grid(
+    demand_vals_arr, covered_fids, last_cell_fid, last_cell_coverage
+):
     """
     Update demand_vals_arr in-place using the precomputed order and stop.
     - Fully zero out demand for indices all but the last covered fid
@@ -203,16 +210,22 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     return top_row, demand_vals_arr
 
 
-def validate_potential(prod_tech, load_zone, build_out_MW, potential_df):
+def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
     """
-    Returns False if the build-out for the input technogy in the input load zone
-    exceeds its potential. Otherwise, returns True.
+    Returns True if the build-out for the input technogy in the input load zone
+    exceeds its potential. Otherwise, returns False.
     """
     potential_df = potential_df.copy()
-    potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
-    potential_df = potential_df[potential_df["prod_tech"] == prod_tech]
 
-    return not build_out_MW > potential_df["potential_MW"].iloc[0]
+    potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
+
+    for i in range(1, 4):
+        tech_row = potential_df[potential_df[f"prod_tech{str(i)}"] == prod_tech]
+        if not tech_row.empty:
+            print(tech_row)
+            break
+
+    return build_out_MW > tech_row["potential_MW"].iloc[0]
 
 
 def scale_capacity_to_buildout(
@@ -223,10 +236,11 @@ def scale_capacity_to_buildout(
     """
     buildout_capacity_tonnes_per_day = buildout_capacities_MW[prod_tech] * 24 / 33.39
     if ref_capacity_tonnes_per_day > buildout_capacity_tonnes_per_day:
-        return buildout_capacity_tonnes_per_day 
+        return buildout_capacity_tonnes_per_day
     return ref_capacity_tonnes_per_day
 
 
+"""
 # -----------------------
 # Main runner
 # -----------------------
@@ -384,3 +398,4 @@ if not final_selected.empty:
 
 print("results saved!")
 print(final_selected)
+"""
