@@ -7,6 +7,7 @@
 
 final_candidates
 outputs 
+candidates
 
 pre_processing/candidate_sites_by_group
 pre_processing/input_files
