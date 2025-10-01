@@ -9,9 +9,7 @@ base_path = Path(__file__).parent
 # User-inputted files
 h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
 capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
-wecc_demand_grid_path = (
-    base_path / "user_inputs" / "2050_wecc_h2_demand_5km_resolution.gpkg"
-)
+wecc_demand_grid_path = base_path / "user_inputs" / "2050_wecc_h2_demand_5km_resolution.gpkg"
 
 # Built-in input files
 candidate_sites_path = base_path / "final_candidates"
@@ -22,11 +20,27 @@ output_path = base_path / "outputs"
 
 
 # -----------------------
+# Unit conversion helpers
+# -----------------------
+TONNES_PER_DAY_TO_MW = 33.39 / 24 # (1 tonne / day) * (1 day / 24 hours) * (1000 kg / tonne) * (33.39 kWh / kg) * (1 MW / 1000 kW) 
+
+def tonnes_per_day_to_kg_per_year(tpd):
+    """Convert tonnes/day to kg/year."""
+    return tpd * 1000 * 365
+
+def tonnes_per_day_to_mw(tpd):
+    """Convert tonnes/day to MW."""
+    return tpd * TONNES_PER_DAY_TO_MW
+
+def mw_to_tonnes_per_day(mw):
+    """Convert MW → tonnes/day."""
+    return mw / TONNES_PER_DAY_TO_MW
+
+
+# -----------------------
 # Helper functions
 # -----------------------
-def covered_radius(
-    x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr
-):
+def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
     Compute coverage radius (m) for a candidate plant and the fraction of the last partially-covered cell.
 
@@ -54,7 +68,7 @@ def covered_radius(
     sorted_dist_square = dist_square[order]
 
     # Annual production capacity (tonnes/day → kg/year)
-    annual_output = capacity * 365 * 1000 * cap_factor
+    annual_output = tonnes_per_day_to_kg_per_year(capacity) * cap_factor
 
     # Cumulative demand
     cum_demand = np.cumsum(sorted_demand)
@@ -88,12 +102,12 @@ def covered_radius(
     else:
         if np.isclose(demand_vals_arr.sum(), annual_output):
             # Demand is exactly fully covered.
-            return 0, np.array(range(len(demand_vals_arr))), -1, 100
+            return 0, np.array(range(len(demand_vals_arr))), -1, 1
 
         else:
             print("production exceeds demand")
             # Change this later
-            return 0, np.array(range(len(demand_vals_arr))), -1, 100
+            return 0, np.array(range(len(demand_vals_arr))), -1, 1
 
     return radius, covered_fids, last_cell_fid, last_cell_coverage_ratio
 
@@ -195,7 +209,7 @@ def add_scores(candidates_df):
         candidates_df["coverage_radius_m"] ** 2
     )
     candidates_df["coverage_m2_per_mw_h2"] = candidates_df["coverage_area_m2"] / (
-        candidates_df["capacity_tonnes_per_day"] / 24 * 33.39
+        candidates_df["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw)
     )
 
     # Create a helper function that normalizes a series using min-max scaling
@@ -238,9 +252,7 @@ def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
     return build_out_MW > tech_row["potential_MW"].iloc[0]
 
 
-def scale_capacity_to_buildout(
-    prod_tech, ref_capacity_tonnes_per_day, buildout_capacities_MW
-):
+def scale_capacity_to_buildout(prod_tech, ref_capacity_tonnes_per_day, buildout_capacities_MW):
     """
     Scale the reference plant capacity to satisfy the remaining build-out requirement.
 
@@ -258,7 +270,7 @@ def scale_capacity_to_buildout(
     float
         Adjusted plant capacity in tonnes/day, capped at the remaining build-out requirement
     """
-    buildout_capacity_tonnes_per_day = buildout_capacities_MW[prod_tech] * 24 / 33.39
+    buildout_capacity_tonnes_per_day = mw_to_tonnes_per_day(buildout_capacities_MW[prod_tech])
     if ref_capacity_tonnes_per_day > buildout_capacity_tonnes_per_day:
         return buildout_capacity_tonnes_per_day
     return ref_capacity_tonnes_per_day
@@ -296,9 +308,7 @@ def load_demand_grid(wecc_demand_grid_path):
     return gdf
 
 
-def get_load_zone_candidates(
-    load_zone, buildout_row, candidate_sites_path, tech_potential, capacity_factors_df
-):
+def get_load_zone_candidates(load_zone, buildout_row, candidate_sites_path, tech_potential, capacity_factors_df):
     """
     Retrieve candidate sites for a load zone based on technologies in the buildout row.
 
@@ -330,9 +340,7 @@ def get_load_zone_candidates(
 
         buildout_capacity_MW = buildout_row[prod_tech_name]
 
-        if exceeds_potential(
-            prod_tech_name, load_zone, buildout_capacity_MW, tech_potential
-        ):
+        if exceeds_potential(prod_tech_name, load_zone, buildout_capacity_MW, tech_potential):
             raise Exception(
                 f"Build-out: {buildout_capacity_MW} MW for {prod_tech_name} in {load_zone} exceeds potential"
             )
@@ -376,9 +384,7 @@ def choose_gas_prod_tech(buildout_row):
         return "gas_smr"
 
 
-def site_plants_for_load_zone(
-    buildout_row, load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr
-):
+def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
     Iteratively select candidate sites in a load zone until all build-out requirements are met.
 
@@ -413,7 +419,7 @@ def site_plants_for_load_zone(
         # adjust if needed
         if any(
             buildout_row
-            < max(load_zone_candidates_df["capacity_tonnes_per_day"] / 24 * 33.39)
+            < max(load_zone_candidates_df["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw))
         ):
             load_zone_candidates_df["capacity_tonnes_per_day"] = (
                 load_zone_candidates_df.apply(
@@ -443,7 +449,7 @@ def site_plants_for_load_zone(
             top_site_tech = choose_gas_prod_tech(buildout_row)
             top_site["prod_tech"] = top_site_tech
 
-        buildout_row[top_site_tech] -= top_site["capacity_tonnes_per_day"] / 24 * 33.39
+        buildout_row[top_site_tech] -= tonnes_per_day_to_mw(top_site["capacity_tonnes_per_day"])
 
         if np.isclose(buildout_row[top_site_tech], 0):
             buildout_row[top_site_tech] = 0
@@ -531,6 +537,8 @@ if not final_selected.empty:
 
     remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
+final_selected['capacity_MW'] = final_selected["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw)
+
 print("\nResults saved!")
 print(
     final_selected[
@@ -538,6 +546,7 @@ print(
             "LOAD_AREA",
             "prod_tech",
             "combined_score",
+            "capacity_MW", 
             "capacity_tonnes_per_day",
             "capacity_factor",
         ]
