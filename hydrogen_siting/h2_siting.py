@@ -17,6 +17,7 @@ technology_potential_path = base_path / "h2_tech_potentials.csv"
 
 # Output path
 output_path = base_path / "outputs"
+output_path.mkdir(exist_ok=True)
 
 # --------------------------
 # Unit conversion helpers
