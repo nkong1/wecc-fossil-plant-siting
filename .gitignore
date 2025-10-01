@@ -9,7 +9,7 @@ final_candidates
 outputs 
 candidates
 
-pre_processing/candidate_sites_by_group
-pre_processing/input_files
-pre_processing/intermediate_outputs
+candidate_sites_by_group
+input_files
+intermediate_outputs
 

@@ -1,5 +1,4 @@
 
-
 # Create a dictionary mapping each hydrogen production technology to its reference plant capacity (tonnes/day)
 ref_capacity = {
     "gas_cc": 1009,

@@ -7,7 +7,7 @@ from h2_reference_plant_specs import *
 base_path = Path(__file__).parent
 
 # User-inputted files
-h2_buildout_path = base_path / "user_inputs" / "prod_tech_capacities.csv"
+h2_buildout_path = base_path / "user_inputs" / "input_buildout.csv"
 capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
 wecc_demand_grid_path = base_path / "user_inputs" / "2050_wecc_h2_demand_5km_resolution.gpkg"
 
