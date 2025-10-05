@@ -1,9 +1,11 @@
 # WECC Fossil Plant Siting
 
-This repo contains the pre-processing scripts and siting algorithms used to model the optimal deployment of fossil hydrogen and electricity plants in the WECC. It is designed to take in aggregate capacity expansion results from SWITCH and optimally disaggregate these across suitable reference plants within each load zone. The purpose is to evaluate the human health impacts of hydrogen and electricity system capacity expansion.
+**Overview:**
 
-For the fossil hydrogen plant siting, we select candidate sites based on the spatial density of served demand, distance to the nearest feedstock source, and distance to the nearest substation, iteratively placing plants until regional build-out results are met. Find a detailed description of the algorithm here: 
+This repo contains the pre-processing scripts and siting algorithms used to optimize fossil hydrogen and electricity plants build-out modeling in the WECC. It takes in aggregate capacity expansion results from SWITCH and optimally disaggregates these across suitable reference plants in each load zone. We focus on fossil plants to evaluate the human health impacts of hydrogen and electricity system capacity expansion.
 
-https://www.overleaf.com/read/vhvsdpnqvzth#a2305d
+**Methodology:**
 
-The fossil electricity siting currently follows a simplified process, considering only the the distance to the nearest feedstock source and distance to the nearest substation. This is a work in progress.
+For hydrogen plant siting, we select candidate sites using 3 main criteria: 1) the spatial density of served demand, 2) distance to the nearest feedstock source, and 3) distance to the nearest substation. We iteratively placing plants until regional build-out results are met. Find the mathematical formulation here: https://www.overleaf.com/read/vhvsdpnqvzth#a2305d
+
+The fossil electricity siting the same fundamental similar process. It considers 1) distance to the nearest feedstock source, 2) distance to the nearest substation, and 3) distance to the nearest water source above a specific flow rate (with values taken from GRIDCERF). 
