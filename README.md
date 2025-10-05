@@ -4,9 +4,7 @@
 
 This repo contains the pre-processing scripts and siting algorithms used to optimize fossil hydrogen and electricity plants build-out modeling in the WECC. It takes in aggregate capacity expansion results from SWITCH and optimally disaggregates these across suitable reference plants in each load zone. We focus on fossil plants to evaluate the human health impacts of hydrogen and electricity system capacity expansion.
 
-**Note:**
-
-Many of the files needed to use this repo are too large for GitHub. Please contact me if you need them.
+**Note:** Many of the files needed to use this repo are too large for GitHub. Please contact me if you need them.
 
 **Methodology:**
 
