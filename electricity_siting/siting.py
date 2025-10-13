@@ -31,14 +31,17 @@ def add_scores(candidates_df):
     """Adds feedstock_score, substation_score, and combined_score columns in place."""
     feedstock_score = min_max_series(candidates_df["dist_to_feedstock_meters"])
     substation_score = min_max_series(candidates_df["dist_to_substation_meters"])
+    substation_score = min_max_series(candidates_df["dist_to_surface_flow_meters"])
 
     candidates_df["feedstock_score"] = feedstock_score
     candidates_df["substation_score"] = substation_score
+    candidates_df["surface_flow_score"] = substation_score
 
     # Weighted combination (adjust weights as needed)
     candidates_df["combined_score"] = (
-        2 * candidates_df["feedstock_score"] +
-        candidates_df["substation_score"]
+        candidates_df["feedstock_score"] +
+        candidates_df["substation_score"] + 
+        candidates_df["surface_flow_score"]
     )
 
 
@@ -106,7 +109,6 @@ def get_load_zone_candidates(load_zone, buildout_row, candidates_path, tech_pote
     candidates = []
 
     for tech in buildout_row.index:
-
         # check to ensure that the buildout does not exceed the tech potential in the load zone
         potential_df = tech_potential[tech_potential['LOAD_AREA'] == load_zone]
         potential_df = potential_df[potential_df['gen_tech'] == tech]

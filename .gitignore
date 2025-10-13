@@ -9,7 +9,7 @@ final_candidates
 outputs 
 candidates
 
-candidate_sites_by_group
 input_files
 intermediate_outputs
-
+candidates_by_tech_group
+candidates_with_dists
