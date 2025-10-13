@@ -104,17 +104,30 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df):
     return selected_candidates_gdf
 
 
-def get_load_zone_candidates(load_zone, buildout_row, candidates_path, tech_potential):
+
+def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
+    """
+    Returns True if the build-out for the input technogy in the input load zone
+    exceeds its potential. Otherwise, returns False.
+    """
+    potential_df = potential_df.copy()
+    potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
+    print(prod_tech)
+    for i in range(1, 3):
+        tech_row = potential_df[potential_df[f"gen_tech{str(i)}"] == prod_tech]
+        if not tech_row.empty:
+            break
+
+    return build_out_MW > tech_row["potential_MW"].iloc[0]
+
+
+def get_load_zone_candidates(load_zone, buildout_row, candidates_path, tech_potential_df):
     """Retrieve candidates for a given load zone & filter by tech buildout needs."""
     candidates = []
 
     for tech in buildout_row.index:
-        # check to ensure that the buildout does not exceed the tech potential in the load zone
-        potential_df = tech_potential[tech_potential['LOAD_AREA'] == load_zone]
-        potential_df = potential_df[potential_df['gen_tech'] == tech]
-        potential_MW = potential_df['potential_MW'].iloc[0]
-
-        if buildout_row[tech] > potential_MW:
+        # check that the buildout does not exceed the tech potential in the load zone
+        if exceeds_potential(tech, load_zone, buildout_row[tech], tech_potential_df):
             raise Exception(f'Buildout for {tech} in {load_zone} exceeds potential')
 
         tech_file = candidates_path / f"{tech}.gpkg"
