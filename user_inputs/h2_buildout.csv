@@ -1,5 +1,5 @@
-﻿load_zone,coal_gas,coal_gas_ccs,biomass_gas,gas_smr,gas_smr_ccs,bio_smr,bio_smr_ccs,gas_atr_ccs,bio_atr_ccs
-AZ_APS_E,0,0,,,,50,50,,0
+﻿load_zone,coal_gas,coal_gas_ccs,biomass_gas,gas_smr,gas_smr_ccs,gas_atr_ccs,bio_smr,bio_smr_ccs,bio_atr_ccs
+AZ_APS_E,0,0,,,,,,50,50
 AZ_APS_N,,,,,,,,,
 AZ_APS_SW,,,,,,,,,
 AZ_NM_N,,,,,,,,,

@@ -2,9 +2,9 @@
 ref_footprint = {
     "gas_smr": 354.5,
     "gas_smr_ccs": 354.5,
+    "gas_atr_ccs": 354.5,
     "bio_smr": 354.5,
     "bio_smr_ccs": 354.5,
-    "gas_atr_ccs": 354.5,
     "bio_atr_ccs": 354.5,
     "coal_gas": 614.0,
     "coal_gas_ccs": 614.0,
@@ -15,9 +15,9 @@ ref_footprint = {
 ref_capacity = {
     "gas_smr": 150,
     "gas_smr_ccs": 150,
+    "gas_atr_ccs": 205,
     "bio_smr": 150,
     "bio_smr_ccs": 150,
-    "gas_atr_ccs": 205,
     "bio_atr_ccs": 205,
     "coal_gas": 205,
     "coal_gas_ccs": 205,

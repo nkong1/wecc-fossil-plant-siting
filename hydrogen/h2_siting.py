@@ -391,9 +391,12 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
         ]
         top_site_tech = top_site["prod_tech"]
 
-        # If a gas SMR site was chosen, update it by calling the choose_gas_prod_tech helper
+        # If a gas SMR or biogas SMR + CCS site was chosen, update it 
         if top_site_tech == "gas_smr":
             top_site_tech = choose_gas_prod_tech(buildout_row)
+            top_site["prod_tech"] = top_site_tech
+        elif top_site_tech == "bio_smr_ccs":
+            top_site_tech = choose_biogas_prod_tech(buildout_row)
             top_site["prod_tech"] = top_site_tech
 
         buildout_row[top_site_tech] -= tonnes_per_day_to_mw(top_site["capacity_tonnes_per_day"])
@@ -450,6 +453,15 @@ def choose_gas_prod_tech(buildout_row):
     else:
         return "gas_smr"
 
+def choose_biogas_prod_tech(buildout_row):
+    """
+    Takes in a pd.Series object containing the remaining build-out capacities for a load zone. Returns
+    a natural gas hydrogen production technology using the following priority: biogas atr + ccs, then 
+    biogas smr + ccs. The first of these technologies that still has remaining build-out is returned.
+    """
+    if "bio_atr_ccs" in buildout_row.index and buildout_row["bio_atr_ccs"] != 0:
+        return "bio_atr_ccs"
+    return "bio_smr_ccs"
 
 def scale_capacity_to_buildout(prod_tech, ref_capacity_tonnes_per_day, buildout_capacities_MW):
     """
@@ -589,7 +601,7 @@ def run(built_generators_df):
     selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070", allow_override=True)
     selected_candidates_gdf['capacity_MW'] = selected_candidates_gdf["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw)
 
-    selected_candidates_gdf.to_file(output_path / "chosen_sites.gpkg", driver="GPKG")
+    selected_candidates_gdf.to_file(output_path / "sited_h2_plants.gpkg", driver="GPKG")
 
     remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
