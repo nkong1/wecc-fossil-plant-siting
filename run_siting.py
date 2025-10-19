@@ -1,12 +1,16 @@
 """
-Use this file to run the combined siting for electricity and hydrogen plants. 
+Use this file to run the combined siting for electricity and hydrogen plants. Be sure to have 
+the correct required input files in the user_inputs folder.
+
+Note: the formatting of all input files exactly match that of the examples, with the exception of 
+the hydrogen demand .gpkg file name (it can be anything, as long as it is a .gpkg file).
 """
 import shutil
 from pathlib import Path
 from electricity.siting import run as site_gen
 from hydrogen.h2_siting import run as site_prod
 
-# Choose which to site. Be sure to have the correct required input files in user_inputs
+# Choose which to site. 
 site_electricity = True
 site_hydrogen = True
 
