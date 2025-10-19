@@ -2,18 +2,21 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from reference_plant_specs import *
+from electricity.reference_plant_specs import *
 
 # -------------------------
 # Input paths
 # -------------------------
 
 electricity_processing_dir = Path(__file__).parent
-inputs_dir = electricity_processing_dir / 'inputs'
 
-candidate_sites_path = inputs_dir / "final_candidates"
-buildout_path = inputs_dir / "input_buildout.csv"
-technology_potential_path = inputs_dir / "gen_tech_potentials.csv"
+built_in_inputs_dir = electricity_processing_dir / 'inputs'
+user_inputs_dir = electricity_processing_dir.parent / 'user_inputs'
+
+candidate_sites_path = built_in_inputs_dir / "final_candidates"
+technology_potential_path = built_in_inputs_dir / "gen_tech_potentials.csv"
+
+buildout_path = user_inputs_dir / "gen_buildout.csv"
 
 # -------------------------
 # Helpers
@@ -105,16 +108,16 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df):
 
 
 
-def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
+def exceeds_potential(gen_tech, load_zone, build_out_MW, potential_df):
     """
     Returns True if the build-out for the input technogy in the input load zone
     exceeds its potential. Otherwise, returns False.
     """
     potential_df = potential_df.copy()
     potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
-    print(prod_tech)
+
     for i in range(1, 3):
-        tech_row = potential_df[potential_df[f"gen_tech{str(i)}"] == prod_tech]
+        tech_row = potential_df[potential_df[f"tech{str(i)}"] == gen_tech]
         if not tech_row.empty:
             break
 
@@ -142,7 +145,6 @@ def get_load_zone_candidates(load_zone, buildout_row, candidates_path, tech_pote
         candidates.append(gdf)
 
     return pd.concat(candidates, ignore_index=True)
-
 
 # -------------------------
 # Main runner
@@ -179,12 +181,10 @@ def run():
         )
 
     selected_candidates_gdf.crs = 'EPSG:5070'
+    
+    # Save results
+    out_path = electricity_processing_dir.parent / "outputs" / "sited_generators.gpkg"
+    selected_candidates_gdf.to_file(out_path, driver="GPKG")
+    print(f"\nSaved sited generators to {out_path}")
 
     return selected_candidates_gdf
-
-
-if __name__ == "__main__":
-    results = run()
-    out_path = electricity_processing_dir / "outputs" / "sited_generators.gpkg"
-    results.to_file(out_path, driver="GPKG")
-    print(f"\nSaved sited generators to {out_path}")

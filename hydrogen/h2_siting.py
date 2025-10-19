@@ -2,22 +2,24 @@ import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 import numpy as np
-from h2_reference_plant_specs import *
+from hydrogen.h2_reference_plant_specs import *
 
 base_path = Path(__file__).parent
 
 # User-inputted files
-h2_buildout_path = base_path / "user_inputs" / "input_buildout.csv"
-capacity_factors_path = base_path / "user_inputs" / "capacity_factors.csv"
-wecc_demand_grid_path = base_path / "user_inputs" / "2050_wecc_h2_demand_5km_resolution.gpkg"
+user_inputs_path = base_path.parent / "user_inputs"
+h2_buildout_path = user_inputs_path / "h2_buildout.csv"
+capacity_factors_path = user_inputs_path / "h2_capacity_factors.csv"
+
+for file_path in user_inputs_path.glob('*gpkg'):
+    wecc_demand_grid_path = file_path
 
 # Built-in input files
-candidate_sites_path = base_path / "final_candidates"
-technology_potential_path = base_path / "h2_tech_potentials.csv"
+candidate_sites_path = base_path / "inputs" / "final_candidates"
+technology_potential_path = base_path / "inputs" / "h2_tech_potentials.csv"
 
 # Output path
-output_path = base_path / "outputs"
-output_path.mkdir(exist_ok=True)
+output_path = base_path.parent / "outputs"
 
 # --------------------------
 # Unit conversion helpers
@@ -428,7 +430,7 @@ def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
     potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
 
     for i in range(1, 4):
-        tech_row = potential_df[potential_df[f"prod_tech{str(i)}"] == prod_tech]
+        tech_row = potential_df[potential_df[f"tech{str(i)}"] == prod_tech]
         if not tech_row.empty:
             break
 
@@ -472,12 +474,69 @@ def scale_capacity_to_buildout(prod_tech, ref_capacity_tonnes_per_day, buildout_
         return buildout_capacity_tonnes_per_day
     return ref_capacity_tonnes_per_day
 
+import geopandas as gpd
+from shapely.prepared import prep
+
+
+
+def remove_overlaps(layer_a, layer_b, overlap_threshold=0.01):
+    """
+    Removes features in layer_a that overlap with feature(s) in layer_b.
+
+    Parameters
+    ----------
+    layer_a : GeoDataFrame
+        Layer to remove features from.
+    layer_b : GeoDataFrame
+        Reference layer to check overlaps against.
+    overlap_threshold : float
+        Minimum fraction of overlap area to consider significant (default 0.01 = 1%).
+
+    Returns
+    -------
+    GeoDataFrame
+        Filtered copy of layer_a with overlapping features removed.
+    """
+
+    # Build spatial index for layer_b
+    sindex_b = layer_b.sindex
+
+    # Pre-prepare geometries for fast intersection tests
+    prepared_b = [prep(geom) for geom in layer_b.geometry]
+
+    to_keep = []
+    for idx, geom in zip(layer_a.index, layer_a.geometry):
+        if geom is None or geom.is_empty:
+            to_keep.append(idx)
+            continue
+
+        # Quick spatial bounding-box filter
+        possible_matches_index = list(sindex_b.intersection(geom.bounds))
+        if not possible_matches_index:
+            to_keep.append(idx)
+            continue
+
+        # Check actual overlap fraction
+        geom_area = geom.area
+        overlapped = False
+        for j in possible_matches_index:
+            if not prepared_b[j].intersects(geom):
+                continue
+            inter_area = geom.intersection(layer_b.geometry.iloc[j]).area
+            if inter_area / geom_area > overlap_threshold:
+                overlapped = True
+                break
+
+        if not overlapped:
+            to_keep.append(idx)
+
+    return layer_a.loc[to_keep].copy()
 
 # -----------------------
 # Main runner
 # -----------------------
 
-def run():
+def run(built_generators_df):
     # Running list of selected candidates
     selected_candidates_gdf = gpd.GeoDataFrame()
 
@@ -509,6 +568,9 @@ def run():
             capacity_factors_df,
         )
 
+        # Remove any candidates that overlap with already-built generators
+        load_zone_candidates_df = remove_overlaps(load_zone_candidates_df, built_generators_df)
+
         selected_candidates_gdf, demand_vals_arr = site_plants_for_load_zone(
             buildout_row,
             load_zone_candidates_df,
@@ -523,32 +585,16 @@ def run():
         remaining_demand_gdf = gpd.read_file(wecc_demand_grid_path)
         remaining_demand_gdf["total_h2_demand_kg"] = demand_vals_arr
 
-    return selected_candidates_gdf, remaining_demand_gdf
+    # Save results
+    selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070", allow_override=True)
+    selected_candidates_gdf['capacity_MW'] = selected_candidates_gdf["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw)
 
-
-# -----------------------
-# Run and save
-# -----------------------
-final_selected, remaining_demand_gdf = run()
-
-if not final_selected.empty:
-    final_selected = final_selected.set_crs("EPSG:5070", allow_override=True)
-    final_selected.to_file(output_path / "chosen_sites.gpkg", driver="GPKG")
+    selected_candidates_gdf.to_file(output_path / "chosen_sites.gpkg", driver="GPKG")
 
     remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
-final_selected['capacity_MW'] = final_selected["capacity_tonnes_per_day"].apply(tonnes_per_day_to_mw)
+    print("\nHydrogen plant siting results saved!")
 
-print("\nResults saved!")
-print(
-    final_selected[
-        [
-            "LOAD_AREA",
-            "prod_tech",
-            "combined_score",
-            "capacity_MW", 
-            "capacity_tonnes_per_day",
-            "capacity_factor",
-        ]
-    ]
-)
+
+
+
