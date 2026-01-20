@@ -157,53 +157,56 @@ def covered_radius(x_coord, y_coord, capacity, cap_factor, demand_x_arr, demand_
       last_cell_fid (int, index of the last partially covered cell),
       last_cell_coverage_ratio (float between 0-1)
     """
-    # Distances from candidate to demand cells
-    dx = demand_x_arr - x_coord
-    dy = demand_y_arr - y_coord
-    dist_square = dx * dx + dy * dy
 
-    # Sort distances + associated demand
+    # Mask zero-demand cells
+    active = demand_vals_arr > 0
+    if not np.any(active):
+        raise Exception("Fossil hydrogen production exceeds total hydrogen demand")
+
+    active_idx = np.nonzero(active)[0]
+
+    dist_square = (
+        (demand_x_arr[active] - x_coord) ** 2
+        + (demand_y_arr[active] - y_coord) ** 2
+    )
+
+    # Sort by distance
     order = np.argsort(dist_square)
-    sorted_demand = demand_vals_arr[order]
+    sorted_demand = demand_vals_arr[active][order]
     sorted_dist_square = dist_square[order]
 
-    # Annual production capacity (tonnes/day → kg/year)
+    # Annual production capacity
     annual_output = tonnes_per_day_to_kg_per_year(capacity) * cap_factor
 
-    # Cumulative demand
     cum_demand = np.cumsum(sorted_demand)
-
-    # Index where production is exhausted
     stop_idx = np.searchsorted(cum_demand, annual_output, side="right")
 
     if stop_idx == 0:
-        # First cell only partially covered
         last_cell_coverage_ratio = annual_output / sorted_demand[0]
-        radius = (sorted_dist_square[0] ** 0.5) * last_cell_coverage_ratio
+        radius = np.sqrt(sorted_dist_square[0]) * last_cell_coverage_ratio
+
         covered_fids = np.array([], dtype=int)
-        last_cell_fid = order[0]
+        last_cell_fid = active_idx[order[0]]
 
     elif stop_idx < len(sorted_demand):
-        # Some cells fully covered, one partially covered
         remaining_prod = annual_output - cum_demand[stop_idx - 1]
         last_cell_coverage_ratio = remaining_prod / sorted_demand[stop_idx]
 
         radius = (
-            sorted_dist_square[stop_idx - 1] ** 0.5
+            np.sqrt(sorted_dist_square[stop_idx - 1])
             + (
-                sorted_dist_square[stop_idx] ** 0.5
-                - sorted_dist_square[stop_idx - 1] ** 0.5
+                np.sqrt(sorted_dist_square[stop_idx])
+                - np.sqrt(sorted_dist_square[stop_idx - 1])
             )
             * last_cell_coverage_ratio
         )
 
-        covered_fids = order[:stop_idx]
-        last_cell_fid = order[stop_idx]
+        covered_fids = active_idx[order[:stop_idx]]
+        last_cell_fid = active_idx[order[stop_idx]]
+
     else:
         if np.isclose(demand_vals_arr.sum(), annual_output):
-            # Demand is exactly fully covered.
-            return 0, np.array(range(len(demand_vals_arr))), -1, 1
-
+            return 0, active_idx, -1, 1
         else:
             raise Exception("Fossil hydrogen production exceeds total hydrogen demand")
 
@@ -238,6 +241,7 @@ def most_suitable_site(candidates_df, demand_x_arr, demand_y_arr, demand_vals_ar
     """
     candidates_df = candidates_df.copy()
 
+    print("Evaluating candidate sites...")
     # Add columns for coverage radius, last cell feature index, and last cell coverage ratio
     radii = []
     fully_covered_fids = []
@@ -571,6 +575,7 @@ def run(built_generators_df):
             continue
 
         print(f"\nProcessing Load Zone: {load_zone}")
+        print(f"Requested Buildout (MW):\n{buildout_row}\n")
 
         load_zone_candidates_df = get_load_zone_candidates(
             load_zone,
@@ -581,7 +586,8 @@ def run(built_generators_df):
         )
 
         # Remove any candidates that overlap with already-built generators
-        load_zone_candidates_df = remove_overlaps(load_zone_candidates_df, built_generators_df)
+        if built_generators_df is not None:
+            load_zone_candidates_df = remove_overlaps(load_zone_candidates_df, built_generators_df)
 
         selected_candidates_gdf, demand_vals_arr = site_plants_for_load_zone(
             buildout_row,

@@ -21,11 +21,13 @@ from electricity.siting import run as site_gen
 from hydrogen.h2_siting import run as site_prod
 
 # Choose which to site. 
-site_electricity = True
+site_electricity = False
 site_hydrogen = True
 
 # Remove and re-make the outputs directory
-shutil.rmtree("outputs")
+outputs_dir = Path("outputs")
+if outputs_dir.exists():
+     shutil.rmtree("outputs")
 Path.mkdir("outputs")
 
 # Call the electricity and/or hydrogen siting modules
