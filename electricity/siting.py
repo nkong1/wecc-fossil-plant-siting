@@ -11,12 +11,8 @@ from electricity.reference_plant_specs import *
 electricity_processing_dir = Path(__file__).parent
 
 built_in_inputs_dir = electricity_processing_dir / 'inputs'
-user_inputs_dir = electricity_processing_dir.parent / 'user_inputs'
-
 candidate_sites_path = built_in_inputs_dir / "final_candidates"
 technology_potential_path = built_in_inputs_dir / "gen_tech_potentials.csv"
-
-buildout_path = user_inputs_dir / "gen_buildout.csv"
 
 # -------------------------
 # Helpers
@@ -34,11 +30,11 @@ def add_scores(candidates_df):
     """Adds feedstock_score, substation_score, and combined_score columns in place."""
     feedstock_score = min_max_series(candidates_df["dist_to_feedstock_meters"])
     substation_score = min_max_series(candidates_df["dist_to_substation_meters"])
-    substation_score = min_max_series(candidates_df["dist_to_surface_flow_meters"])
+    surface_flow_score = min_max_series(candidates_df["dist_to_surface_flow_meters"])
 
     candidates_df["feedstock_score"] = feedstock_score
     candidates_df["substation_score"] = substation_score
-    candidates_df["surface_flow_score"] = substation_score
+    candidates_df["surface_flow_score"] = surface_flow_score
 
     # Weighted combination (adjust weights as needed)
     candidates_df["combined_score"] = (
@@ -56,7 +52,6 @@ def most_suitable_site(candidates_df):
     top_candidates = candidates_df[candidates_df["combined_score"] == candidates_df["combined_score"].min()]
 
     if len(top_candidates) == 1:
-        print(top_candidates.iloc[0])
         return top_candidates.iloc[0]
     else:
         return top_candidates.sort_values("capacity_MW", ascending=False).iloc[0]
@@ -64,9 +59,19 @@ def most_suitable_site(candidates_df):
 
 def site_plants_for_load_zone(buildout_row, load_zone_candidates_df):
     """Iteratively select sites until all tech buildout is satisfied in a load zone."""
-    selected_candidates_gdf = gpd.GeoDataFrame()
+    selected_candidates_gdf = gpd.GeoDataFrame(geometry=[], crs="EPSG:5070")
 
-    while sum(buildout_row) > 0:
+    # small tolerance to avoid floating point issues
+    TOL = 1e-6
+
+    while sum(buildout_row) > TOL:
+        # Pre-scale candidate capacities to remaining buildout
+        for idx, row in load_zone_candidates_df.iterrows():
+            tech = row["gen_tech"]
+            remaining = buildout_row.get(tech, 0)
+            if row["capacity_MW"] > remaining:
+                load_zone_candidates_df.at[idx, "capacity_MW"] = remaining
+
         # Pick best site
         top_site = most_suitable_site(load_zone_candidates_df).copy()
 
@@ -75,33 +80,29 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df):
             load_zone_candidates_df.geometry != top_site.geometry
         ]
 
-        # Update remaining buildout
         top_site_tech = top_site["gen_tech"]
 
-        # If the reference capacity exceeds the remaining buildout, set the capacity to the remaining buildout
-        if (top_site["capacity_MW"] > buildout_row[top_site_tech]):
-            top_site["capacity_MW"] = buildout_row[top_site_tech]
-            buildout_row[top_site_tech] = 0
-        else:
-            buildout_row[top_site_tech] -= top_site["capacity_MW"]
-
-        if np.isclose(buildout_row[top_site_tech], 0):
+        # Update remaining buildout for the selected tech
+        buildout_row[top_site_tech] -= top_site["capacity_MW"]
+        if np.isclose(buildout_row[top_site_tech], 0) or buildout_row[top_site_tech] < 0:
             buildout_row[top_site_tech] = 0
 
         # Drop candidates of techs already satisfied
         load_zone_candidates_df = load_zone_candidates_df[
             load_zone_candidates_df["gen_tech"].map(
-                lambda tech: buildout_row.get(tech, 0) != 0
+                lambda tech: buildout_row.get(tech, 0) > TOL
             )
         ]
 
-        selected_candidates_gdf = pd.concat(
-            [selected_candidates_gdf, gpd.GeoDataFrame([top_site])],
-            ignore_index=True,
-        )
+        # Add the selected site to the output GeoDataFrame
+        selected_candidates_gdf = pd.concat([
+            selected_candidates_gdf,
+            gpd.GeoDataFrame([top_site], geometry="geometry", crs=selected_candidates_gdf.crs)
+        ], ignore_index=True)
 
+        
         print(
-            f"Sited {top_site_tech} | Remaining capacity (MW): {buildout_row[top_site_tech]}"
+            f"Sited {top_site_tech} | Capacity {top_site['capacity_MW']} MW | Remaining capacity (MW): {buildout_row[top_site_tech]}"
         )
 
     return selected_candidates_gdf
@@ -146,15 +147,45 @@ def get_load_zone_candidates(load_zone, buildout_row, candidates_path, tech_pote
 
     return pd.concat(candidates, ignore_index=True)
 
+def retrieve_sorted_buildout(scenario):
+    """Retrieve the buildout dataframe for the given scenario."""
+    scenario_inputs_path = electricity_processing_dir.parent /  "user_inputs" / scenario
+    buildout_path = scenario_inputs_path / "gen_cap.csv"
+
+    build_out_df = pd.read_csv(buildout_path, index_col=1).iloc[:, 1:]
+
+    # rename columns to match gen_tech names
+    build_out_df = build_out_df.rename(columns={
+        'CCGT': 'gas_cc',
+        'NGCC_post_ccs_95': 'gas_cc_ccs',
+        'Coal_IGCC': 'coal_igcc',
+        'IGCC_pre_ccs_90': 'coal_igcc_ccs',
+    })
+
+    gen_techs = [
+        'gas_cc',
+        'gas_cc_ccs',
+        'coal_igcc',
+        'coal_igcc_ccs',
+    ]
+    build_out_df = build_out_df[gen_techs]
+
+    # Sort by decreasing total capacity buildout, then drop the total_buildout column
+    build_out_df['total_buildout'] = build_out_df.sum(axis=1)
+    build_out_df = build_out_df.sort_values(by='total_buildout', ascending=False)
+    build_out_df.drop(columns=['total_buildout'], inplace=True)
+
+    return build_out_df
+
 # -------------------------
 # Main runner
 # -------------------------
 
-def run():
-    selected_candidates_gdf = gpd.GeoDataFrame()
-
-    build_out_df = pd.read_csv(buildout_path, index_col=0)
+def run(scenario):
+    build_out_df = retrieve_sorted_buildout(scenario)
     tech_potential_df = pd.read_csv(technology_potential_path)
+
+    selected_candidates_gdf = gpd.GeoDataFrame(geometry=[], crs="EPSG:5070")
 
     for load_zone, buildout_row in build_out_df.iterrows():
         buildout_row = buildout_row[buildout_row != 0].dropna()
@@ -172,18 +203,15 @@ def run():
 
         selected_zone_candidates = site_plants_for_load_zone(
             buildout_row,
-            load_zone_candidates_df,
+            load_zone_candidates_df
         )
 
-        selected_candidates_gdf = pd.concat(
-            [selected_candidates_gdf, selected_zone_candidates],
-            ignore_index=True
-        )
+        selected_candidates_gdf = pd.concat([selected_candidates_gdf, selected_zone_candidates], ignore_index=True)
 
-    selected_candidates_gdf.crs = 'EPSG:5070'
-    
+    selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070")
+
     # Save results
-    out_path = electricity_processing_dir.parent / "outputs" / "sited_generators.gpkg"
+    out_path = electricity_processing_dir.parent / "outputs" / scenario / "sited_generators.gpkg"
     selected_candidates_gdf.to_file(out_path, driver="GPKG")
     print(f"\nSaved sited generators to {out_path}")
 

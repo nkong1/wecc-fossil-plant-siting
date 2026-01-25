@@ -24,20 +24,38 @@ from hydrogen.h2_siting import run as site_prod
 site_electricity = False
 site_hydrogen = True
 
-# Remove and re-make the outputs directory
-outputs_dir = Path("outputs")
-if outputs_dir.exists():
-     shutil.rmtree("outputs")
-Path.mkdir("outputs")
+scenarios = ["BAU", "limited_progress", "moderate_action"]
+for scenario_name in scenarios:
 
-# Call the electricity and/or hydrogen siting modules
-sited_generators = None
-if site_electricity:
-    sited_generators = site_gen()
+    # Remove and re-make the outputs directory
+    outputs_dir = Path("outputs") / scenario_name
 
-if site_hydrogen:
-    site_prod(sited_generators)
+    # Remove the directory if it exists
+    if outputs_dir.exists():
+        shutil.rmtree(outputs_dir)
 
-print('\nFinished!')
+    # Re-create the directory 
+    outputs_dir.mkdir(parents=True, exist_ok=True)
 
-# Results are automatically saved to the outputs folder
+    print(f"\nRunning {scenario_name} scenario")
+
+    # Call the electricity and/or hydrogen siting modules
+    sited_generators = None
+
+    if site_electricity:
+        print(f"============================")
+        print(f"Running electricity siting")
+        print(f"============================")
+
+        sited_generators = site_gen(scenario_name)
+
+    if site_hydrogen:
+        print(f"============================")
+        print(f"Running hydrogen siting")
+        print(f"============================")
+
+        site_prod(scenario_name, sited_generators)
+
+    print('\nFinished!')
+
+    # Results are automatically saved to the outputs folder
