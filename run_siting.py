@@ -25,7 +25,7 @@ site_electricity = False
 site_hydrogen = True
 
 scenarios = ["BAU", "limited_progress", "moderate_action"]
-for scenario_name in scenarios:
+for scenario_name in ['limited_progress']:
 
     # Remove and re-make the outputs directory
     outputs_dir = Path("outputs") / scenario_name
