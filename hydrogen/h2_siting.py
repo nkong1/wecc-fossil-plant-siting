@@ -312,7 +312,7 @@ def most_suitable_site(candidates_df, buildout_row, demand_x_arr, demand_y_arr, 
       - coverage_ratio
       - radius (m)
     """
-    candidates_df = candidates_df.copy()
+    candidates_df = candidates_df.reset_index(drop=True)
 
     print("Evaluating candidate sites...")
     # Add columns for coverage radius, last cell feature index, and last cell coverage ratio
@@ -324,14 +324,16 @@ def most_suitable_site(candidates_df, buildout_row, demand_x_arr, demand_y_arr, 
 
     candidates_count_dict = get_candidates_count_dict_by_tech(candidates_df)
 
-    for i, row in enumerate(candidates_df.itertuples(index=False)):
+    print(candidates_count_dict)
+
+    for idx, row in candidates_df.iterrows():
         colocate, base_cap_MW, ccs_cap_MW = requires_colocation(row.prod_tech, buildout_row, candidates_count_dict[row.prod_tech])
         
         if colocate:
-            candidates_df.at[i, "colocated"] = True
-            candidates_df.at[i, "prod_tech2"] = row.prod_tech + "_ccs" if "ccs" not in row.prod_tech else row.prod_tech.replace("_ccs", "")
-            candidates_df.at[i, "tech1_capacity_MW"] = base_cap_MW if "ccs" not in row.prod_tech else ccs_cap_MW
-            candidates_df.at[i, "tech2_capacity_MW"] = ccs_cap_MW if "ccs" not in row.prod_tech else base_cap_MW
+            candidates_df.at[idx, "colocated"] = True
+            candidates_df.at[idx, "prod_tech2"] = row.prod_tech + "_ccs" if "ccs" not in row.prod_tech else row.prod_tech.replace("_ccs", "")
+            candidates_df.at[idx, "tech1_capacity_MW"] = base_cap_MW if "ccs" not in row.prod_tech else ccs_cap_MW
+            candidates_df.at[idx, "tech2_capacity_MW"] = ccs_cap_MW if "ccs" not in row.prod_tech else base_cap_MW
             effective_mw = base_cap_MW + ccs_cap_MW
             
         else:
@@ -479,16 +481,34 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
             if buildout_row[top_site["prod_tech2"]] < 1e-6:
                 buildout_row[top_site["prod_tech2"]] = 0
 
+            print(f"Sited colocation plant for {top_site['prod_tech']} and {top_site['prod_tech2']} | tech1 capacity (MW): {tech1_mw} | tech2 capacity (MW): {tech2_mw}")
+
         else:
             # Tech switching logic 
             top_site_tech = top_site["prod_tech"]
 
+            # Switch the tech if needed and update the capacity too
             if top_site_tech == "gas_smr":
                 top_site_tech = choose_gas_prod_tech(buildout_row)
                 top_site["prod_tech"] = top_site_tech
+
+                # Update the capacity for the switched technology, using the minimum between the reference and remaining
+                ref_cap_tpd = ref_capacity[top_site_tech]
+                ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
+
+                remaining_tech_mw = buildout_row[top_site_tech]
+                top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)
+
             elif top_site_tech == "bio_smr_ccs":
                 top_site_tech = choose_biogas_prod_tech(buildout_row)
                 top_site["prod_tech"] = top_site_tech
+
+                # Update the capacity for the switched technology, using the minimum between the reference and remaining
+                ref_cap_tpd = ref_capacity[top_site_tech]
+                ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
+
+                remaining_tech_mw = buildout_row[top_site_tech]
+                top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)
 
             # subtract from buildout
             plant_mw = top_site["total_capacity_MW"]
@@ -497,6 +517,10 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
             # Clean up floating point remainders
             if buildout_row[top_site_tech] < 1e-6:
                 buildout_row[top_site_tech] = 0
+
+            print(
+                f"Sited single plant: {top_site_tech} | Capacity: {top_site['total_capacity_MW']} MW | Remaining tech capacity (MW): {buildout_row[top_site_tech]}"
+            )
             
         # Finalize capacity and update the demand grid
         demand_vals_arr = update_demand_grid(
@@ -522,9 +546,7 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
             ignore_index=True
         )
 
-        print(
-            f"Sited plant: {top_site_tech} | Capacity: {top_site['capacity_tonnes_per_day']} tonnes/day | Remaining tech capacity (MW): {buildout_row[top_site_tech]}"
-        )
+
 
     return selected_candidates_gdf, demand_vals_arr
 
@@ -583,8 +605,6 @@ def requires_colocation(prod_tech, buildout_row, num_candidates):
         ref_cap_MW = tonnes_per_day_to_mw(ref_capacity[tech_group[0]])
         candidates_required += np.ceil(buildout_row.get(tech, 0) / ref_cap_MW)
 
-        print(f"Tech: {tech}, Buildout: {buildout_row}, Ref Cap (MW): {ref_cap_MW}, Candidates Required: {candidates_required}")
-
     if candidates_required > num_candidates:
         base_cap_MW = buildout_row[tech_group[0]] % ref_cap_MW
         ccs_cap_MW = buildout_row[tech_group[1]] % ref_cap_MW
@@ -594,8 +614,6 @@ def requires_colocation(prod_tech, buildout_row, num_candidates):
         colocation_case1 = colocated_cap_MW  >= ref_cap_MW 
         colocation_case2 = colocated_cap_MW < ref_cap_MW and buildout_row[prod_tech] < ref_cap_MW
         colocate = colocation_case1 or colocation_case2
-
-        print(f"Colocation required for {prod_tech}?. Base Cap (MW): {base_cap_MW}, CCS Cap (MW): {ccs_cap_MW}, Colocate: {colocate}")
 
         return colocate, base_cap_MW, ccs_cap_MW
     
@@ -736,6 +754,7 @@ def run(scenario, built_generators_df):
     demand_vals_arr = wecc_demand_grid["total_h2_demand_kg"].to_numpy().astype(float)
     
     for load_zone, buildout_row in h2_build_out_df.iterrows():
+        
         # Only keep technologies with non-zero capacity buildout
         buildout_row = buildout_row[buildout_row > 1e-6].dropna()
         if buildout_row.empty:
@@ -769,13 +788,13 @@ def run(scenario, built_generators_df):
 
         print("\nFinal remaining (kg/yr):", demand_vals_arr.sum())
 
+        # Save results after every load zone
+        selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070")
+        selected_candidates_gdf.to_file(output_path / "sited_h2_plants.gpkg", driver="GPKG")
+
     # From the demand_vals_arr, make a new gpkg of remaining demand
     remaining_demand_gdf = gpd.read_file(wecc_demand_grid_path)
     remaining_demand_gdf["total_h2_demand_kg"] = demand_vals_arr
-
-    # Save results
-    selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070")
-    selected_candidates_gdf.to_file(output_path / "sited_h2_plants.gpkg", driver="GPKG")
 
     remaining_demand_gdf.to_file(output_path / "remaining_demand.gpkg", driver="GPKG")
 
