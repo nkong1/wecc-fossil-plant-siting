@@ -80,19 +80,9 @@ def retrieve_capacity_factors(capacity_factors_path):
     df = pd.read_csv(capacity_factors_path, index_col=1).iloc[:, 1:]
 
     # Keep only emitting techs
-    keep_cols = [
-        'bio_atr_ccs',
-        'bio_smr',
-        'bio_smr_ccs',
-        'biomass_gas',
-        'coal_gas',
-        'coal_gas_ccs',
-        'gas_atr_ccs',
-        'gas_smr',
-        'gas_smr_ccs',
-    ]
-
+    keep_cols = ref_capacity.keys()
     df = df[keep_cols]
+
     return df
 
 
@@ -167,10 +157,10 @@ def get_load_zone_candidates(load_zone, buildout_row, candidate_sites_path, tech
             [load_zone_candidates_df, prod_tech_df], ignore_index=True
         )
 
-        # Set geometry and centroids
-        load_zone_candidates_df["centroid"] = load_zone_candidates_df.geometry.centroid
-        load_zone_candidates_df["centroid_x"] = load_zone_candidates_df["centroid"].x
-        load_zone_candidates_df["centroid_y"] = load_zone_candidates_df["centroid"].y
+    # Set geometry and centroids
+    load_zone_candidates_df["centroid"] = load_zone_candidates_df.geometry.centroid
+    load_zone_candidates_df["centroid_x"] = load_zone_candidates_df["centroid"].x
+    load_zone_candidates_df["centroid_y"] = load_zone_candidates_df["centroid"].y
 
     return load_zone_candidates_df
 
@@ -270,36 +260,24 @@ def get_candidates_count_dict_by_tech(candidates_df):
     """
     Count the a dictionary from each technology's group to its number of candidate sites
     """
-    tech_count_dict = {
-        "gas": 0,
-        "biogas": 0,
-        "coal": 0,
-        "biomass": 0,
-    }
+    tech_count_dict = {}
 
+    # initialize with zeroes
+    for tech in ref_capacity.keys():
+        tech_count_dict[tech] = 0
+
+    print(candidates_df)
+    
+    # count
     for prod_tech in candidates_df["prod_tech"]:
-        if prod_tech in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]:
-            tech_count_dict["gas"] += 1
-        elif prod_tech in ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"]:
-            tech_count_dict["biogas"] += 1
-        elif prod_tech in ["coal_gas", "coal_gas_ccs"]:
-            tech_count_dict["coal"] += 1
-        elif prod_tech == "biomass_gas":
-            tech_count_dict["biomass"] += 1
+        tech_count_dict[prod_tech] += 1
 
-    # Expand the mapping to from individual technologies to the group counts
-    expanded_tech_count_dict = {}
-    for prod_tech in candidates_df["prod_tech"].unique():
-        if prod_tech in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]:
-            expanded_tech_count_dict[prod_tech] = tech_count_dict["gas"]
-        elif prod_tech in ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"]:
-            expanded_tech_count_dict[prod_tech] = tech_count_dict["biogas"]
-        elif prod_tech in ["coal_gas", "coal_gas_ccs"]:
-            expanded_tech_count_dict[prod_tech] = tech_count_dict["coal"]
-        elif prod_tech == "biomass_gas":
-            expanded_tech_count_dict[prod_tech] = tech_count_dict["biomass"]
+    # expand to the duplicate groups
+    tech_count_dict["gas_smr_ccs"] = tech_count_dict["gas_smr"]
+    tech_count_dict["gas_atr_ccs"] = tech_count_dict["gas_smr"]
+    tech_count_dict["bio_atr_ccs"] = tech_count_dict["bio_smr_ccs"]
 
-    return expanded_tech_count_dict
+    return tech_count_dict
 
 def most_suitable_site(candidates_df, buildout_row, demand_x_arr, demand_y_arr, demand_vals_arr):
     """
@@ -325,24 +303,30 @@ def most_suitable_site(candidates_df, buildout_row, demand_x_arr, demand_y_arr, 
     candidates_count_dict = get_candidates_count_dict_by_tech(candidates_df)
 
     print(candidates_count_dict)
+    print(f"Requested Buildout (MW):\n{buildout_row}\n")
 
     for idx, row in candidates_df.iterrows():
-        colocate, base_cap_MW, ccs_cap_MW = requires_colocation(row.prod_tech, buildout_row, candidates_count_dict[row.prod_tech])
+        
+        final_tech, effective_mw = resolve_effective_tech_and_capacity(
+                row.prod_tech, buildout_row
+            )
+        
+        colocate, base_cap_MW, ccs_cap_MW, atr_cap_MW = requires_colocation(final_tech, buildout_row, candidates_count_dict[row.prod_tech])
         
         if colocate:
             candidates_df.at[idx, "colocated"] = True
+
             candidates_df.at[idx, "prod_tech2"] = row.prod_tech + "_ccs" if "ccs" not in row.prod_tech else row.prod_tech.replace("_ccs", "")
+            candidates_df.at[idx, "prod_tech3"] = row.prod_tech[:3] + "_atr_ccs" if atr_cap_MW > 0 else ""
+
             candidates_df.at[idx, "tech1_capacity_MW"] = base_cap_MW if "ccs" not in row.prod_tech else ccs_cap_MW
             candidates_df.at[idx, "tech2_capacity_MW"] = ccs_cap_MW if "ccs" not in row.prod_tech else base_cap_MW
-            effective_mw = base_cap_MW + ccs_cap_MW
+            candidates_df.at[idx, "tech3_capacity_MW"] = atr_cap_MW
+
+            effective_mw = base_cap_MW + ccs_cap_MW + atr_cap_MW
             
         else:
-            # Determine the "Effective Capacity" (reference vs what's left to build)
-            remaining_tech_mw = buildout_row[row.prod_tech]
-            ref_mw = tonnes_per_day_to_mw(row.capacity_tonnes_per_day)
-            
-            # Scale down if this tech has less buildout left than the plant size
-            effective_mw = min(ref_mw, remaining_tech_mw)
+            candidates_df.at[idx, "prod_tech"] = final_tech
 
         eff_cap_tpd = mw_to_tonnes_per_day(effective_mw)
         effective_capacities_MW.append(effective_mw)
@@ -376,13 +360,25 @@ def most_suitable_site(candidates_df, buildout_row, demand_x_arr, demand_y_arr, 
     # Find the candidate with the lowest score (corresponding to the most ideal site)
     top_candidates = candidates_df[
         candidates_df["combined_score"] == candidates_df["combined_score"].min()
-    ]
+    ].copy()
 
     # Resolve conflicts if multiple sites have the same score by choosing the largest capacity site
     if len(top_candidates) == 1:
         top_candidate = top_candidates.iloc[0]
     else:
-        top_candidate = top_candidates.sort_values("capacity_tonnes_per_day", ascending=False).iloc[0]
+        top_candidates["has_ccs"] = top_candidates["prod_tech"].str.contains("ccs")
+
+        top_candidate = (
+            top_candidates
+                .sort_values(
+                    ["has_ccs", "total_capacity_MW"],  # or capacity_tonnes_per_day
+                    ascending=[False, False]
+                )
+                .iloc[0]
+        )
+
+        # drop the helper attribute
+        top_candidate = top_candidate.drop(labels=["has_ccs"])
 
     return top_candidate
 
@@ -453,8 +449,10 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
     # add a column in the candidates for colocation
     load_zone_candidates_df["colocated"] = False
     load_zone_candidates_df["prod_tech2"] = ""
+    load_zone_candidates_df["prod_tech3"] = ""
     load_zone_candidates_df["tech1_capacity_MW"] = 0.0
     load_zone_candidates_df["tech2_capacity_MW"] = 0.0
+    load_zone_candidates_df["tech3_capacity_MW"] = 0.0
 
     while sum(buildout_row) > 1e-6:  # small tolerance to avoid floating point issues
         remaining_demand_kg_per_year = demand_vals_arr.sum()
@@ -471,48 +469,61 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
             # Subtract both technologies from buildout
             tech1_mw = top_site["tech1_capacity_MW"]
             tech2_mw = top_site["tech2_capacity_MW"]
+            tech3_mw = top_site["tech3_capacity_MW"]
+
 
             buildout_row[top_site["prod_tech"]] -= tech1_mw
             buildout_row[top_site["prod_tech2"]] -= tech2_mw
+            
+            if tech3_mw > 0:
+                buildout_row[top_site["prod_tech3"]] -= tech3_mw
 
             # Clean up floating point remainders
             if buildout_row[top_site["prod_tech"]] < 1e-6:
                 buildout_row[top_site["prod_tech"]] = 0
             if buildout_row[top_site["prod_tech2"]] < 1e-6:
                 buildout_row[top_site["prod_tech2"]] = 0
+            if tech3_mw > 0 and buildout_row[top_site["prod_tech3"]] < 1e-6:
+                buildout_row[top_site["prod_tech3"]] = 0
 
-            print(f"Sited colocation plant for {top_site['prod_tech']} and {top_site['prod_tech2']} | tech1 capacity (MW): {tech1_mw} | tech2 capacity (MW): {tech2_mw}")
+            if top_site["prod_tech3"] == "":
+                print(f"Sited colocation plant for {top_site['prod_tech']} and {top_site['prod_tech2']} | tech1 capacity (MW): {tech1_mw} | tech2 capacity (MW): {tech2_mw}")
+            else:
+                print(f"Sited colocation plant for {top_site['prod_tech']} and {top_site['prod_tech2']} and {top_site['prod_tech3']} | tech1 capacity (MW): {tech1_mw} | tech2 capacity (MW): {tech2_mw} | tech3 capacity (MW): {tech3_mw}")
 
+            """else:
+                # Tech switching logic 
+                top_site_tech = top_site["prod_tech"]
+
+                # Switch the tech if needed and update the capacity too
+                if top_site_tech == "gas_smr":
+                    top_site_tech = choose_gas_prod_tech(buildout_row)
+                    top_site["prod_tech"] = top_site_tech
+
+                    # Update the capacity for the switched technology, using the minimum between the reference and remaining
+                    ref_cap_tpd = ref_capacity[top_site_tech]
+                    ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
+
+                    remaining_tech_mw = buildout_row[top_site_tech]
+                    top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)
+
+                elif top_site_tech == "bio_smr_ccs":
+                    top_site_tech = choose_biogas_prod_tech(buildout_row)
+                    top_site["prod_tech"] = top_site_tech
+
+                    # Update the capacity for the switched technology, using the minimum between the reference and remaining
+                    ref_cap_tpd = ref_capacity[top_site_tech]
+                    ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
+
+                    remaining_tech_mw = buildout_row[top_site_tech]
+                    top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)"""
         else:
-            # Tech switching logic 
             top_site_tech = top_site["prod_tech"]
-
-            # Switch the tech if needed and update the capacity too
-            if top_site_tech == "gas_smr":
-                top_site_tech = choose_gas_prod_tech(buildout_row)
-                top_site["prod_tech"] = top_site_tech
-
-                # Update the capacity for the switched technology, using the minimum between the reference and remaining
-                ref_cap_tpd = ref_capacity[top_site_tech]
-                ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
-
-                remaining_tech_mw = buildout_row[top_site_tech]
-                top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)
-
-            elif top_site_tech == "bio_smr_ccs":
-                top_site_tech = choose_biogas_prod_tech(buildout_row)
-                top_site["prod_tech"] = top_site_tech
-
-                # Update the capacity for the switched technology, using the minimum between the reference and remaining
-                ref_cap_tpd = ref_capacity[top_site_tech]
-                ref_cap_mw = tonnes_per_day_to_mw(ref_cap_tpd)
-
-                remaining_tech_mw = buildout_row[top_site_tech]
-                top_site["total_capacity_MW"] = min(ref_cap_mw, remaining_tech_mw)
 
             # subtract from buildout
             plant_mw = top_site["total_capacity_MW"]
             buildout_row[top_site_tech] -= plant_mw
+
             
             # Clean up floating point remainders
             if buildout_row[top_site_tech] < 1e-6:
@@ -536,9 +547,7 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
         ]
 
         load_zone_candidates_df = load_zone_candidates_df[
-            load_zone_candidates_df["prod_tech"].map(
-                lambda tech: buildout_row.get(tech, 0) > 1e-6
-            )
+            load_zone_candidates_df["prod_tech"].map(lambda t: tech_group_has_remaining(t, buildout_row))
         ]
 
         selected_candidates_gdf = pd.concat(
@@ -547,18 +556,40 @@ def site_plants_for_load_zone(buildout_row, load_zone_candidates_df, demand_x_ar
         )
 
 
-
     return selected_candidates_gdf, demand_vals_arr
 
 # -----------------------
 # Other miscellaneous helpers 
 # ----------------------- 
+
+def resolve_effective_tech_and_capacity(prod_tech, buildout_row):
+    if prod_tech in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]:
+        tech = choose_gas_prod_tech(buildout_row)
+    elif prod_tech in ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"]:
+        tech = choose_biogas_prod_tech(buildout_row)
+    else:
+        tech = prod_tech
+
+    remaining = buildout_row.get(tech, 0)
+
+    ref_mw = tonnes_per_day_to_mw(ref_capacity[tech])
+    eff = min(ref_mw, remaining)
+
+    return tech, eff
+
+def tech_group_has_remaining(prod_tech, buildout_row):
+    if prod_tech in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]:
+        return any(buildout_row.get(t, 0) > 1e-9 for t in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"])
+    elif prod_tech in ["bio_smr_ccs", "bio_atr_ccs"]:
+        return any(buildout_row.get(t, 0) > 1e-9 for t in ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"])
+    else:
+        return buildout_row.get(prod_tech, 0) > 1e-9
+    
 def exceeds_potential(prod_tech, load_zone, build_out_MW, potential_df):
     """
     Returns True if the build-out for the input technogy in the input load zone
     exceeds its potential. Otherwise, returns False.
     """
-    potential_df = potential_df.copy()
     potential_df = potential_df[potential_df["LOAD_AREA"] == load_zone]
 
     for i in range(1, 4):
@@ -584,41 +615,58 @@ def requires_colocation(prod_tech, buildout_row, num_candidates):
 
     Returns
     -------
-    (bool, base_size_MW, ccs_size_MW)
-        first item: True is colocating is should be done right now, False otherwise
+    (bool, base_size_MW, ccs_size_MW, atr_size_MW)
+        first item: True is colocating should be done right now, False otherwise
         second item: the size in MW of the base part of the plant (0 if no colocation is required)
         third item: the size in MW of the CCS part of the plant (0 if no colocation is required)
+        fourth item: the size in MW of the ATR part of the plant (0 if no ATR colocation is required)
     """
 
-    if prod_tech in ["gas_smr", "gas_smr_ccs"]:
-        tech_group = ["gas_smr", "gas_smr_ccs"]
-    elif prod_tech in ["bio_smr", "bio_smr_ccs"]:
-        tech_group = ["bio_smr", "bio_smr_ccs"]
+    if prod_tech in ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]:
+        tech_group = ["gas_smr", "gas_smr_ccs", "gas_atr_ccs"]
+    elif prod_tech in ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"]:
+        tech_group = ["bio_smr", "bio_smr_ccs", "bio_atr_ccs"]
     elif prod_tech in ["coal_gas", "coal_gas_ccs"]:
         tech_group = ["coal_gas", "coal_gas_ccs"]
     else:
-        return False, 0, 0
+        return False, 0, 0, 0
     
     candidates_required = 0
 
-    for tech in tech_group:
-        ref_cap_MW = tonnes_per_day_to_mw(ref_capacity[tech_group[0]])
-        candidates_required += np.ceil(buildout_row.get(tech, 0) / ref_cap_MW)
+    ref_cap_MW = tonnes_per_day_to_mw(ref_capacity[prod_tech])
 
+    for tech in tech_group:
+        candidates_required += np.ceil(buildout_row.get(tech, 0) / tonnes_per_day_to_mw(ref_capacity[tech]))
+
+    # Colocation required
     if candidates_required > num_candidates:
-        base_cap_MW = buildout_row[tech_group[0]] % ref_cap_MW
-        ccs_cap_MW = buildout_row[tech_group[1]] % ref_cap_MW
+
+        # Case where we need to co-locate all three technologies (this only happens for gas or biogas)
+        if candidates_required == num_candidates + 2:
+
+            base_cap_MW = buildout_row[tech_group[0]] % tonnes_per_day_to_mw(ref_capacity[tech_group[0]])
+            ccs_cap_MW = buildout_row[tech_group[1]] % tonnes_per_day_to_mw(ref_capacity[tech_group[1]])
+            atr_cap_MW = buildout_row[tech_group[2]] % tonnes_per_day_to_mw(ref_capacity[tech_group[2]])
+        
+        # Case where we only need to colocate the technology with and without CCS
+        elif candidates_required == num_candidates + 1:
+            base_cap_MW = buildout_row[tech_group[0]] % tonnes_per_day_to_mw(ref_capacity[tech_group[0]])
+            ccs_cap_MW = buildout_row[tech_group[1]] % tonnes_per_day_to_mw(ref_capacity[tech_group[1]])
+            atr_cap_MW = 0
+
+        else:
+            print("Error in colocation logic")
 
         colocated_cap_MW = base_cap_MW + ccs_cap_MW
 
-        colocation_case1 = colocated_cap_MW  >= ref_cap_MW 
+        # Decide whether it needs to be colocated now
+        colocation_case1 = colocated_cap_MW  >= ref_cap_MW
         colocation_case2 = colocated_cap_MW < ref_cap_MW and buildout_row[prod_tech] < ref_cap_MW
         colocate = colocation_case1 or colocation_case2
-
-        return colocate, base_cap_MW, ccs_cap_MW
     
-    return False, 0, 0
-
+        return colocate, base_cap_MW, ccs_cap_MW, atr_cap_MW
+    return colocate, 0, 0, 0
+    
 
 
 def choose_gas_prod_tech(buildout_row):
@@ -754,14 +802,14 @@ def run(scenario, built_generators_df):
     demand_vals_arr = wecc_demand_grid["total_h2_demand_kg"].to_numpy().astype(float)
     
     for load_zone, buildout_row in h2_build_out_df.iterrows():
-        
+        if load_zone != "OR_PDX":
+            continue
         # Only keep technologies with non-zero capacity buildout
         buildout_row = buildout_row[buildout_row > 1e-6].dropna()
         if buildout_row.empty:
             continue
 
         print(f"\nProcessing Load Zone: {load_zone}")
-        print(f"Requested Buildout (MW):\n{buildout_row}\n")
 
         load_zone_candidates_df = get_load_zone_candidates(
             load_zone,
