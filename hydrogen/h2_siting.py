@@ -694,65 +694,11 @@ def scale_capacity_to_buildout(prod_tech, ref_capacity_tonnes_per_day, buildout_
         return buildout_capacity_tonnes_per_day
     return ref_capacity_tonnes_per_day
 
-
-def remove_overlaps(layer_a, layer_b, overlap_threshold=0.01):
-    """
-    Removes features in layer_a that overlap with feature(s) in layer_b.
-
-    Parameters
-    ----------
-    layer_a : GeoDataFrame
-        Layer to remove features from.
-    layer_b : GeoDataFrame
-        Reference layer to check overlaps against.
-    overlap_threshold : float
-        Minimum fraction of overlap area to consider significant (default 0.01 = 1%).
-
-    Returns
-    -------
-    GeoDataFrame
-        Filtered copy of layer_a with overlapping features removed.
-    """
-
-    # Build spatial index for layer_b
-    sindex_b = layer_b.sindex
-
-    # Pre-prepare geometries for fast intersection tests
-    prepared_b = [prep(geom) for geom in layer_b.geometry]
-
-    to_keep = []
-    for idx, geom in zip(layer_a.index, layer_a.geometry):
-        if geom is None or geom.is_empty:
-            to_keep.append(idx)
-            continue
-
-        # Quick spatial bounding-box filter
-        possible_matches_index = list(sindex_b.intersection(geom.bounds))
-        if not possible_matches_index:
-            to_keep.append(idx)
-            continue
-
-        # Check actual overlap fraction
-        geom_area = geom.area
-        overlapped = False
-        for j in possible_matches_index:
-            if not prepared_b[j].intersects(geom):
-                continue
-            inter_area = geom.intersection(layer_b.geometry.iloc[j]).area
-            if inter_area / geom_area > overlap_threshold:
-                overlapped = True
-                break
-
-        if not overlapped:
-            to_keep.append(idx)
-
-    return layer_a.loc[to_keep].copy()
-
 # -----------------------
 # Main runner
 # -----------------------
 
-def run(scenario, built_generators_df, version):
+def run(scenario, version):
 
     # User-inputted files
     scenario_inputs_path = base_path.parent /  "user_inputs" / scenario
@@ -801,10 +747,6 @@ def run(scenario, built_generators_df, version):
             tech_potential,
             capacity_factors_df,
         )
-
-        # Remove any candidates that overlap with already-built generators
-        if built_generators_df is not None:
-            load_zone_candidates_df = remove_overlaps(load_zone_candidates_df, built_generators_df)
 
         zone_candidates_gdf, demand_vals_arr = site_plants_for_load_zone(
             buildout_row,
