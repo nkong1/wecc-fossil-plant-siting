@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 
-for file_path in Path("switch_outputs/h2/mosek_v6").glob("*.csv"):
+for file_path in Path("switch_outputs/mosek_v6").glob("*.csv"):
     name = file_path.stem
 
     if "h2_" in name:
