@@ -1,0 +1,355 @@
+technologies:
+    Wind:
+        color: "#00BFFF"
+        map:
+            - Wind
+    Offshore Wind:
+        color: "#0000EE"
+        map:
+            - Offshore_Wind
+            - Offshore_Wind_hyb
+    Solar:
+        color: "#FFD700"
+        map:
+            - Central_PV
+            - Commercial_PV
+            - Residential_PV
+            - CSP_Trough_10h_Storage
+            - CSP_Trough_No_Storage
+    Gas:
+        color: "#FF0000"
+        map:
+            - Gas_Internal_Combustion_Engine
+            - Gas_Internal_Combustion_Engine_Cogen
+            - Gas_Steam_Turbine
+            - Gas_Steam_Turbine_Cogen
+            - Gas_Combustion_Turbine
+            - Gas_Combustion_Turbine_Cogen
+            - CCGT
+            - CCGT_Cogen
+    Oil:
+        color: "#000000"
+        map:
+            - DistillateFuelOil_Internal_Combustion_Engine
+            - DistillateFuelOil_Internal_Combustion_Engine_Cogen
+            - DistillateFuelOil_Combustion_Turbine
+            - DistillateFuelOil_Steam_Turbine
+    Coal:
+        color: "#808080"
+        map:
+            - Coal_IGCC
+            - Coal_Steam_Turbine
+            - Coal_Steam_Turbine_Cogen
+    Biomass:
+        color: "#008000"
+        map:
+            - Bio_Gas
+            - Bio_Gas_Steam_Turbine
+            - Bio_Gas_Combustion_Turbine
+            - Bio_Gas_Combustion_Turbine_Cogen
+            - Bio_Gas_Internal_Combustion_Engine
+            - Bio_Gas_Internal_Combustion_Engine_Cogen
+            - Bio_Liquid_Steam_Turbine
+            - Bio_Liquid_Steam_Turbine_Cogen
+            - Bio_Solid_Steam_Turbine
+            - Bio_Solid_Steam_Turbine_Cogen
+    Biomass with CCS:
+        color: "#013b01"
+        map:
+            - Bio_post_ccs        
+    Geothermal:
+        color: "#964B00"
+        map:
+            - Geothermal
+    Batteries (D):
+        color: "#EDFAED"
+        map:
+            - Battery_Storage
+    Batteries (C):
+        color: "#C1FFC1"
+        map:
+            - Battery_Storage_Charge
+            - Compressed_Air_Energy_Storage
+    Exports:
+        color: "#FFB6C1"
+        map:
+            - Exports
+    Imports:
+        color: "#CD8C95"
+        map:
+            - Imports
+    Hydro:
+        color: "#BCD2EE"
+        map:
+            - Hydro_NonPumped
+            - Hydro_Pumped
+    Nuclear:
+        color: "#8A2BE2"
+        map:
+            - Nuclear
+    Waste:
+        color: "#FFA500"
+        map:
+            - Waste
+            - ST
+            - GT
+            - OT
+    Gas with CCS:
+        color: "#F98F8F"
+        map:
+            - NGCC_post_ccs_95
+    Coal with CCS:
+        color: "#7B6363"
+        map:
+            - PC_post_ccs_95
+            - IGCC_pre_ccs_90
+    Other:
+        color: "#FFFFFF"
+        map:
+            - Other
+    H2 Turbine:
+        color: "#fc03f0"
+        map:
+            - H2_CC
+            - H2_CT
+    H2 Fuel Cell:
+        color: "#e6cafa"
+        map:
+            - H2_FC
+
+tech_order:
+    - H2 Turbine
+    - H2 Fuel Cell
+    - Coal
+    - Coal with CCS
+    - Gas
+    - Gas with CCS
+    - Oil
+    - Waste
+    - Biomass
+    - Biomass with CCS
+    - Nuclear
+    - Geothermal
+    - Offshore Wind
+    - Wind
+    - Batteries (C)
+    - Batteries (D)
+    - Hydro
+    - Solar
+
+tech_order_ext:
+    - Biomass Reforming
+    - Biomass Reforming with CCS
+    - Biomass Gasification
+    - Biomass Gasification with CCS
+    - Gas Pyrolysis
+    - Gas Reforming
+    - Gas Reforming with CCS
+    - Coal Gasification
+    - Coal Gasification with CCS
+    - Renewable Electrolysis    
+    - Nuclear Electrolysis
+    - Grid Electrolysis
+    - H2 Turbine
+    - H2 Fuel Cell
+    - Coal
+    - Coal with CCS
+    - Gas
+    - Gas with CCS
+    - Oil
+    - Waste
+    - Biomass
+    - Biomass with CCS
+    - Nuclear
+    - Geothermal
+    - Offshore Wind
+    - Wind
+    - Batteries (C)
+    - Batteries (D)
+    - Hydro
+    - Solar
+
+tech_order_gen:
+    - H2 Turbine
+    - H2 Fuel Cell
+    - Coal
+    - Coal with CCS
+    - Gas
+    - Gas with CCS
+    - Oil
+    - Waste
+    - Biomass
+    - Biomass with CCS
+    - Nuclear
+    - Geothermal
+    - Offshore Wind
+    - Wind
+    - Batteries (C)
+    - Batteries (D)
+    - Hydro
+    - Solar
+
+tech_order_cap:
+    - H2 Turbine
+    - H2 Fuel Cell
+    - Biomass
+    - Biomass with CCS
+    - Coal
+    - Coal with CCS
+    - Gas
+    - Gas with CCS
+    - Geothermal
+    - Nuclear
+    - Oil
+    - Waste
+    - Offshore Wind
+    - Wind
+    - Hydro
+    - Batteries
+    - Solar
+
+tech_order_w_exchanges:
+    - H2 Turbine
+    - H2 Fuel Cell
+    - Biomass
+    - Biomass with CCS
+    - Coal
+    - Coal with CCS
+    - Gas
+    - Gas with CCS
+    - Geothermal
+    - Hydro
+    - Nuclear
+    - Oil
+    - Waste
+    - Offshore Wind
+    - Wind
+    - Imports
+    - Exports
+    - Batteries (C)
+    - Batteries (D)
+    - Solar
+
+h2prod_technologies:
+    Biomass Reforming:
+        color: "#875516"
+        map:
+            - bio_atr
+            - bio_smr
+    Biomass Reforming with CCS:
+        color: "#415f87"
+        map:
+            - bio_atr_ccs
+            - bio_smr_ccs
+    Biomass Gasification:
+        color: "#542a00"
+        map:
+            - biomass_gas
+    Biomass Gasification with CCS:
+        color: "#86aee6"
+        map:
+            - biomass_gas_ccs
+    Gas Pyrolysis:
+        color: "#66ffe8"
+        map:
+            - gas_pyrolysis
+    Gas Reforming:
+        color: "#a3a3a3"
+        map:
+            - gas_smr
+            - gas_atr
+    Gas Reforming with CCS:
+        color: "#0054ff"
+        map:
+            - gas_smr_ccs
+            - gas_atr_ccs
+    Coal Gasification:
+        color: "#000000"
+        map:
+            - coal_gas
+    Coal Gasification with CCS:
+        color: "#004478"
+        map:
+            - coal_gas_ccs
+    Renewable Electrolysis:
+        color: "#008000"
+        map:
+            - solar_elz
+            - wind_elz 
+            - soec_elz_csp     
+    Nuclear Electrolysis:
+        color: "#ff80a0"
+        map:
+            - soec_elz
+    Grid Electrolysis:
+        color: "#ffde4a"
+        map:
+            - grid_elz
+
+h2prod_tech_order:
+    - Biomass Reforming
+    - Biomass Reforming with CCS
+    - Biomass Gasification
+    - Biomass Gasification with CCS
+    - Gas Pyrolysis
+    - Gas Reforming
+    - Gas Reforming with CCS
+    - Coal Gasification
+    - Coal Gasification with CCS
+    - Renewable Electrolysis    
+    - Nuclear Electrolysis
+    - Grid Electrolysis
+
+h2prod_colors:
+    Biomass (no CCS):
+        color: "#875516"
+        map:
+            - bio_atr
+            - bio_smr
+            - biomass_gas
+    Thermal with CCS:
+        color: "#0054ff"
+        map:
+            - bio_atr_ccs
+            - bio_smr_ccs
+            - gas_smr_ccs
+            - gas_atr_ccs
+            - coal_gas_ccs
+            - biomass_gas_ccs
+    Pyrolysis:
+        color: "#70fffc"
+        map:
+            - gas_pyrolysis
+    Gas (no CCS):
+        color: "#afb0b0"
+        map:
+            - gas_smr
+            - gas_atr
+    Coal (no CCS):
+        color: "#000000"
+        map:
+            - coal_gas
+    Renewable Electrolysis:
+        color: "#4da92a"
+        map:
+            - solar_elz
+            - wind_elz    
+            - soec_elz_csp  
+    Nuclear Electrolysis:
+        color: "#ff80a0"
+        map:
+            - soec_elz
+    Grid Electrolysis:
+        color: "#ffe300"
+        map:
+            - grid_elz
+
+h2prod_color_order:
+    - Biomass (no CCS)
+    - Gas (no CCS)
+    - Coal (no CCS)
+    - Thermal with CCS
+    - Pyrolysis
+    - Renewable Electrolysis
+    - Nuclear Electrolysis
+    - Grid Electrolysis

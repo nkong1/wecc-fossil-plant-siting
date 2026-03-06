@@ -24,18 +24,11 @@ from hydrogen.h2_siting import run as site_prod
 site_electricity = False
 site_hydrogen = True
 
-scenarios = ["BAU", "limited_progress", "moderate_action"]
-for scenario_name in ['limited_progress']:
+outputs_dir = Path("outputs")
 
-    # Remove and re-make the outputs directory
-    outputs_dir = Path("outputs") / scenario_name
-
-    # Remove the directory if it exists
-    if outputs_dir.exists():
-        shutil.rmtree(outputs_dir)
-
-    # Re-create the directory 
-    outputs_dir.mkdir(parents=True, exist_ok=True)
+scenarios = ["limited_progress", "moderate_action"]
+version = "mosek_v6"
+for scenario_name in scenarios:
 
     print(f"\nRunning {scenario_name} scenario")
 
@@ -54,7 +47,7 @@ for scenario_name in ['limited_progress']:
         print(f"Running hydrogen siting")
         print(f"============================")
 
-        site_prod(scenario_name, sited_generators)
+        site_prod(scenario_name, sited_generators, version)
 
     print('\nFinished!')
 

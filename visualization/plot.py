@@ -18,7 +18,7 @@ PLOT_CRS = "EPSG:4326"
 # ==========================================================
 load_zones_path = Path("visualization/load_zones/load_zones.shp")
 demand_tif_path = Path(f"user_inputs/{scenario_name}/demand.tif")
-#sited_h2_path = Path(f"outputs/{scenario_name}/sited_h2_plants.gpkg")
+sited_h2_path = Path(f"outputs/{scenario_name}/sited_h2_plants.gpkg")
 
 # ==========================================================
 # Technology Reference Capacities (MW)
@@ -39,11 +39,11 @@ ref_capacity = {
 # Load Vector Data
 # ==========================================================
 load_zones = gpd.read_file(load_zones_path).to_crs(PLOT_CRS)
-#plants = gpd.read_file(sited_h2_path).to_crs(PLOT_CRS)
+plants = gpd.read_file(sited_h2_path).to_crs(PLOT_CRS)
 
 # Use centroids for plotting
-#plants_pts = plants.copy()
-#plants_pts["geometry"] = plants.geometry.centroid
+plants_pts = plants.copy()
+plants_pts["geometry"] = plants.geometry.centroid
 
 # Plot bounds with padding
 minx, miny, maxx, maxy = load_zones.total_bounds
@@ -89,17 +89,8 @@ with rasterio.open(demand_tif_path) as src:
         dst_transform.f,
     )
 
-    # Log scale ONLY on positive values
-    positive = demand[demand > 0]
 
-    if len(positive) > 0:
-        norm = LogNorm(
-            vmin=positive.min(),
-            vmax=np.percentile(positive, 99.5),
-        )
-    else:
-        # Fallback if no positive values
-        norm = LogNorm(vmin=1, vmax=1000)
+
 
 from matplotlib.colors import SymLogNorm
 
@@ -108,8 +99,9 @@ linthresh = 1.0  # values smaller than this are mapped linearly
 
 norm = SymLogNorm(linthresh=linthresh,
                   vmin=demand.min(),
-                  vmax=np.percentile(demand, 99.5),
+                  vmax=1e6,
                   base=10)
+
 img = ax.imshow(
     demand,
     extent=extent,
@@ -157,12 +149,38 @@ load_zones.plot(
     zorder=1,
 )
 
+ref_capacity = {
+    "gas_smr": 150,
+    "gas_smr_ccs": 150,
+    "gas_atr_ccs": 205,
+    "bio_smr": 150,
+    "bio_smr_ccs": 150,
+    "bio_atr_ccs": 205,
+    "coal_gas": 205,
+    "coal_gas_ccs": 205,
+    "biomass_gas": 48,
+}
+
 # Color map for technologies
-cmap = plt.get_cmap("tab10")
-tech_colors = {tech: cmap(i % 10) for i, tech in enumerate(ref_capacity.keys())}
+safe_colors = [
+    "#E60000",  # red
+    "#86B6F0",  # light blue
+    "#3760EA",  # blue
+    "#D3A97C",  # light bown
+    "#957157",  # darker brown
+    "#563610",  # dark brown
+    "#313131",  # gray
+    "#F0E442",  # yellow
+    "#BABABA"   # different shade of gray
+]
+
+tech_colors = {
+    tech: safe_colors[i % len(safe_colors)]
+    for i, tech in enumerate(ref_capacity.keys())
+}
 
 # Scaling factor for marker size
-size_scale = 1
+size_scale = .2
 
 legend_handles = []
 capacity_handles = []
@@ -173,7 +191,7 @@ for tech in ref_capacity.keys():
         continue
 
     # Marker sizes proportional to capacity
-    sizes = subset["capacity_tonnes_per_day"].values * size_scale
+    sizes = subset["total_capacity_MW"].values * size_scale
 
     ax.scatter(
         subset.geometry.x,
@@ -181,8 +199,8 @@ for tech in ref_capacity.keys():
         s=sizes,
         c=[tech_colors[tech]],
         edgecolors="black",
-        linewidths=1.2,
-        alpha=0.8,
+        linewidths=.7,
+        alpha=1,
         zorder=3,
     )
 
@@ -212,30 +230,35 @@ for c in example_caps:
             markerfacecolor='gray',
             markeredgecolor='black',
             markersize=marker_size,
-            label=f"{c} t/day",
+            label=f"{c} MW",
             linestyle='None'
         )
     )
-# Tech legend centered below the plot (top row)
+# Tech legend
 legend1 = ax.legend(
     handles=legend_handles,
     title="Production Technology",
-    loc='upper center',        # anchor at top center of bbox
-    bbox_to_anchor=(0.5, -0.16),  # x=0.5 center, y negative to move below axes
+    title_fontsize='small',      # Shrinks the title
+    prop={'size': 8},            # Shrinks the labels
+    loc='upper center',
+    bbox_to_anchor=(0.5, -0.17),  # Adjusted closer to plot
     frameon=True,
-    framealpha=0.95,
-    ncol=3
+    ncol=3,
+    labelspacing=0.5,            # Vertical space between entries
+    handletextpad=0.4            # Space between icon and text
 )
 
-# Capacity legend centered below the plot (bottom row)
+# Capacity legend
 legend2 = ax.legend(
     handles=capacity_handles,
     title="Plant Capacity",
+    title_fontsize='small',
+    prop={'size': 8},
     loc='upper center',
-    bbox_to_anchor=(0.5, -0.39),  # y lower to be under the tech legend
+    bbox_to_anchor=(0.5, -0.5), # Moved up since tech legend is now smaller
     frameon=True,
-    framealpha=0.95,
-    ncol=3
+    ncol=3,
+    labelspacing=0.5
 )
 
 # Add the first legend back
@@ -251,5 +274,4 @@ ax.set_aspect('equal')
 ax.set_xlabel("Longitude", fontsize=10)
 ax.set_ylabel("Latitude", fontsize=10)
 ax.set_title(f"Hydrogen Plant Build-Out - {scenario_name}", fontsize=10, fontweight='bold')
-plt.tight_layout()
 plt.show()

@@ -181,7 +181,7 @@ def retrieve_sorted_buildout(scenario):
 # Main runner
 # -------------------------
 
-def run(scenario):
+def run(scenario, version):
     build_out_df = retrieve_sorted_buildout(scenario)
     tech_potential_df = pd.read_csv(technology_potential_path)
 
@@ -211,8 +211,12 @@ def run(scenario):
     selected_candidates_gdf = selected_candidates_gdf.set_crs("EPSG:5070")
 
     # Save results
-    out_path = electricity_processing_dir.parent / "outputs" / scenario / "sited_generators.gpkg"
-    selected_candidates_gdf.to_file(out_path, driver="GPKG")
+
+    out_path = electricity_processing_dir.parent / "outputs" / version / scenario 
+    # Create the output directory if it doesn't exist
+    if not out_path.exists():
+        out_path.mkdir(parents=True)
+    selected_candidates_gdf.to_file(out_path / "sited_generators.gpkg", driver="GPKG")
     print(f"\nSaved sited generators to {out_path}")
 
     return selected_candidates_gdf
